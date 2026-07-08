@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* ── Sylvy design tokens (--sy-*) ──────────────────────────────────────
+   Papier de labo éditorial : crème chaud, encre presque noire, Sylvy Green
+   réservé à un moment héros. Pas de blanc pur, aucun gradient. */
+:root {
+  --sy-cream: #faf9f4;         /* fond chaud, jamais de blanc pur */
+  --sy-cream-2: #f4f2ea;       /* surface légèrement enfoncée */
+  --sy-ink: #1e1e1e;           /* encre — bouton primaire, texte fort */
+  --sy-ink-muted: #6b6a63;     /* texte secondaire chaud */
+  --sy-line: #e7e4d8;          /* bordures fines */
+  --sy-green: #1fb958;         /* Sylvy Green — un moment héros par surface */
+  --sy-green-deep: #117833;    /* actions à conséquence */
+  --sy-amber: #b7791f;         /* déviation / attention */
+  --sy-red: #b4322b;           /* erreur / déviation critique */
+  --sy-radius: 14px;           /* cartes */
+  --sy-shadow: 0 1px 2px rgba(30, 30, 20, 0.04), 0 8px 24px rgba(30, 30, 20, 0.04);
+}
+
+/* Expose les tokens comme utilitaires Tailwind (bg-sy-cream, text-sy-ink, …) */
+@theme inline {
+  --color-sy-cream: var(--sy-cream);
+  --color-sy-cream-2: var(--sy-cream-2);
+  --color-sy-ink: var(--sy-ink);
+  --color-sy-ink-muted: var(--sy-ink-muted);
+  --color-sy-line: var(--sy-line);
+  --color-sy-green: var(--sy-green);
+  --color-sy-green-deep: var(--sy-green-deep);
+  --color-sy-amber: var(--sy-amber);
+  --color-sy-red: var(--sy-red);
+  --radius-sy: var(--sy-radius);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-eyebrow: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--sy-cream);
+  color: var(--sy-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Eyebrow mono 11px uppercase — le rythme éditorial Sylvy */
+.sy-eyebrow {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sy-ink-muted);
+}
+
+.sy-card {
+  background: var(--sy-cream);
+  border: 1px solid var(--sy-line);
+  border-radius: var(--sy-radius);
+  box-shadow: var(--sy-shadow);
+}
