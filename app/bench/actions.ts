@@ -167,15 +167,22 @@ export async function deleteEvidenceAction(runId: string, evidenceId: string): P
 
 /** Termine le run, génère le rapport auditable (Brique Auto Report — repli
  *  hors-ligne déterministe si aucune clé LLM), indexe le tout dans la mémoire
- *  du lab (best-effort), puis ouvre la page rapport. */
+ *  du lab (best-effort), puis ouvre la page rapport. La génération du rapport
+ *  et l'indexation sont best-effort : avec une clé LLM, un appel qui échoue ne
+ *  doit pas rendre le run orphelin (déjà completed, sans rapport, sans
+ *  redirection). La page rapport régénère si besoin au chargement. */
 export async function completeRunAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
   // Capturé avant complétion : titre du protocole + étapes, pour l'indexation du run.
   const ctx = await getRunContext(store, runId);
   const run = await completeRun(store, runId);
-  const report = await generateReport(store, runId);
-  if (ctx) await indexRun(store, run, ctx.protocol.title, ctx.steps);
-  const markdown = await exportReportMarkdown(store, runId);
-  await indexReport(store, report, markdown);
+  try {
+    const report = await generateReport(store, runId);
+    if (ctx) await indexRun(store, run, ctx.protocol.title, ctx.steps);
+    const markdown = await exportReportMarkdown(store, runId);
+    await indexReport(store, report, markdown);
+  } catch {
+    // best-effort — la page rapport régénère au chargement si absent
+  }
   redirect(`/bench/report/${runId}`);
 }

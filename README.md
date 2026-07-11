@@ -81,7 +81,7 @@ See [`docs/DECISIONS.md`](docs/DECISIONS.md) for the "why" behind each choice, a
 ## Tests
 
 ```bash
-npm test        # 97 tests — the lib/live-experiment core, kept byte-for-byte verbatim
+npm test        # 97 tests (core + host seams) — lib/live-experiment is kept byte-for-byte verbatim
 npx tsc --noEmit
 npm run lint
 ```

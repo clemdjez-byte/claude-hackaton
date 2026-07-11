@@ -56,7 +56,7 @@ export default function ScaleActivatePanel({
             type="button"
             onClick={() => setCollapsed((c) => !c)}
             className="text-muted-soft hover:text-foreground"
-            aria-label={collapsed ? "Déplier" : "Replier"}
+            aria-label={collapsed ? "Expand" : "Collapse"}
           >
             {collapsed ? "▸" : "▾"}
           </button>
@@ -68,7 +68,7 @@ export default function ScaleActivatePanel({
           onClick={onRemove}
           className="mono-display text-[11px] text-muted-soft hover:text-danger"
         >
-          ✕ retirer
+          ✕ remove
         </button>
       </div>
 
@@ -79,8 +79,8 @@ export default function ScaleActivatePanel({
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-muted" style={{ background: "var(--surface-2)" }}>
-                  <th className="px-3 py-2 font-medium">Ingrédient</th>
-                  <th className="px-3 py-2 font-medium">Volume / réaction</th>
+                  <th className="px-3 py-2 font-medium">Ingredient</th>
+                  <th className="px-3 py-2 font-medium">Volume / reaction</th>
                   <th className="px-3 py-2 font-medium">Type</th>
                   <th className="px-3 py-2 font-medium text-right">Total</th>
                   <th className="px-2 py-2" />
@@ -93,7 +93,7 @@ export default function ScaleActivatePanel({
                       <input
                         value={c.name}
                         onChange={(e) => updateComponent(i, { name: e.target.value })}
-                        placeholder="Nom"
+                        placeholder="Name"
                         className="w-full rounded-md border border-border bg-background px-2 py-1 focus:outline-none"
                       />
                     </td>
@@ -130,7 +130,7 @@ export default function ScaleActivatePanel({
                         }`}
                         style={c.perWell ? { background: "var(--sy-brick-soft)" } : undefined}
                       >
-                        {c.perWell ? "tube par tube" : "partagé"}
+                        {c.perWell ? "per tube" : "shared"}
                       </button>
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums font-medium">
@@ -141,7 +141,7 @@ export default function ScaleActivatePanel({
                         type="button"
                         onClick={() => removeComponent(i)}
                         className="text-muted-soft hover:text-danger"
-                        aria-label="Retirer l'ingrédient"
+                        aria-label="Remove ingredient"
                       >
                         ✕
                       </button>
@@ -156,7 +156,7 @@ export default function ScaleActivatePanel({
             onClick={addComponent}
             className="mt-2 text-[12px] font-semibold text-accent"
           >
-            + ajouter un ingrédient
+            + add ingredient
           </button>
 
           {/* n / overage + total */}

@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, unstable_rethrow } from "next/navigation";
 import type { Protocol } from "@/lib/live-experiment/core/types";
 import { generateProtocolAction } from "../actions";
 
@@ -65,7 +65,16 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
     const text = brief.trim();
     if (!text) return;
     setError(null);
-    start(() => generateProtocolAction(text));
+    start(async () => {
+      try {
+        await generateProtocolAction(text);
+      } catch (e) {
+        // generateProtocolAction redirects on success (throws internally) —
+        // let that pass through, only report real failures.
+        unstable_rethrow(e);
+        setError(e instanceof Error ? e.message : "Could not draft that protocol.");
+      }
+    });
   }
 
   const busy = uploading || pending;

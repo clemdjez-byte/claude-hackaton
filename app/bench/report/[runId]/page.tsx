@@ -1,12 +1,14 @@
 // Page rapport d'un run — Brique Auto Report (getReport + exportReportMarkdown).
-// Le rapport est déjà généré au moment où on arrive ici (completeRunAction
-// appelle generateReport avant de rediriger) : on se contente de l'afficher,
-// section par section, avec le design system Bench. Le markdown exporté reste
-// disponible en repli (copier-coller, archivage) sous un simple <details>/<pre>
-// — pas de dépendance markdown nouvelle.
+// Le rapport est normalement déjà généré au moment où on arrive ici
+// (completeRunAction appelle generateReport avant de rediriger, best-effort) ;
+// s'il manque (ex. échec LLM à la complétion), on le régénère ici avant
+// d'abandonner en 404. On affiche ensuite le rapport section par section, avec
+// le design system Bench. Le markdown exporté reste disponible en repli
+// (copier-coller, archivage) sous un simple <details>/<pre> — pas de
+// dépendance markdown nouvelle.
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getReport, exportReportMarkdown } from "@/lib/live-experiment";
+import { getReport, generateReport, exportReportMarkdown } from "@/lib/live-experiment";
 import type { ReportCitation } from "@/lib/live-experiment";
 import { getBenchSession } from "@/lib/session";
 
@@ -68,7 +70,8 @@ export default async function ReportPage({ params }: { params: Params }) {
   const { runId } = await params;
   const { store } = getBenchSession();
 
-  const report = await getReport(store, runId);
+  let report = await getReport(store, runId);
+  if (!report) report = await generateReport(store, runId).catch(() => null);
   if (!report) notFound();
 
   const markdown = await exportReportMarkdown(store, runId);
