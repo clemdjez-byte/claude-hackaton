@@ -48,8 +48,10 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
       };
       if (!res.ok || !body.protocolId) throw new Error(body.error ?? `Error ${res.status}`);
       open("protocol", { protocolId: body.protocolId });
+      setFiles([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read those documents.");
+    } finally {
       setUploading(false);
     }
   }
