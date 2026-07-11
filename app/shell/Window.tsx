@@ -63,7 +63,8 @@ export function Window({
     let curLeft = 0;
     let curTop = 0;
     const down = (e: PointerEvent) => {
-      onFocusRef.current();
+      // Focus dispatch pour cette interaction vient déjà de onPointerDown={onFocus}
+      // sur la racine .window (bulle native depuis .win-bar) — pas de doublon ici.
       if ((e.target as HTMLElement).closest("button") || w.classList.contains("full")) return;
       const r = w.getBoundingClientRect();
       ox = r.left;

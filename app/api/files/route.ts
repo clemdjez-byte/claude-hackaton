@@ -3,10 +3,9 @@
 // dans son propre content (cf. lib/bench/auto-report ReportPageContent) —
 // pas de requête supplémentaire, juste le lire depuis la page déjà chargée.
 import { getBenchSession, WS } from "@/lib/session";
+import type { PageMeta } from "@/app/files/types";
 
 export const runtime = "nodejs";
-
-type PageMeta = { id: string; title: string; createdAt: string; type: string; runId?: string };
 
 export async function GET() {
   const { store } = getBenchSession();

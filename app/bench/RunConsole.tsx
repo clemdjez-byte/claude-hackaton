@@ -319,10 +319,15 @@ export default function RunConsole({
             case "did_act":
               didAct = true;
               break;
-            case "error":
-              setReply((r) => (r ? r + " " : "") + NET_ERROR);
-              voice.speakChunk(NET_ERROR);
+            case "error": {
+              // Message serveur (ex. clé LLM manquante) affiché tel quel, comme
+              // le fait le client chat (cf. app/chat/ChatClient.tsx) — repli sur
+              // NET_ERROR seulement si le serveur n'a rien fourni.
+              const msg = ev.message ? String(ev.message) : NET_ERROR;
+              setReply((r) => (r ? r + " " : "") + msg);
+              voice.speakChunk(msg);
               break;
+            }
           }
         }
       }

@@ -29,7 +29,6 @@ export { createDb, getDb } from "./sqlite";
 
 // Couche LLM.
 export {
-  MODELS,
   modelFor,
   hasLlmKey,
   generateObjectFor,

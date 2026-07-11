@@ -2,12 +2,12 @@
 
 // Server actions du Bench — partie « Protocol Studio ». Chaque action résout
 // le contexte de la brique (getBenchSession), appelle une fonction de brique
-// avec le store, puis revalide (actions consommées in-place par un panneau)
-// ou retourne l'id créé (le panneau ouvre alors la fenêtre suivante via
-// useWindowsContext().open — plus de redirect() : les surfaces sont des
-// panneaux montés, pas des routes). Les nombres viennent du calcul
-// déterministe, jamais du LLM.
-import { revalidatePath } from "next/cache";
+// avec le store, puis soit ne renvoie rien (le panneau appelant recharge
+// lui-même via son propre reload(), pas de revalidatePath — les routes
+// /bench/* n'existent plus), soit retourne l'id créé (le panneau ouvre alors
+// la fenêtre suivante via useWindowsContext().open — plus de redirect() : les
+// surfaces sont des panneaux montés, pas des routes). Les nombres viennent du
+// calcul déterministe, jamais du LLM.
 import {
   startRun,
   generateProtocol,
@@ -31,14 +31,6 @@ import {
 import { getBenchSession, WS } from "@/lib/session";
 import { indexProtocol, indexEvidence, indexRun, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
 
-function protocolPath(protocolId: string) {
-  return `/bench/protocols/${protocolId}`;
-}
-
-function runPath(runId: string) {
-  return `/bench/run/${runId}`;
-}
-
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
 
 /** Crée un protocole depuis une description libre (brief). Le panneau ouvre
@@ -54,7 +46,6 @@ export async function generateProtocolAction(brief: string): Promise<{ protocolI
 export async function adaptProtocolAction(protocolId: string, instruction: string): Promise<void> {
   const { store } = getBenchSession();
   await adaptProtocol(store, protocolId, instruction);
-  revalidatePath(protocolPath(protocolId));
 }
 
 /** Publie un protocole (refuse sans source, côté brique). */
@@ -62,7 +53,6 @@ export async function publishProtocolAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
   const protocol = await publishProtocol(store, protocolId);
   await indexProtocol(store, protocol);
-  revalidatePath(protocolPath(protocolId));
 }
 
 /** Fige une version immuable depuis le brouillon (draft_doc), sans publier. */
@@ -70,7 +60,6 @@ export async function sealDraftAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
   const { protocol } = await sealDraft(store, protocolId);
   await indexProtocol(store, protocol);
-  revalidatePath(protocolPath(protocolId));
 }
 
 /** Fige une version depuis le brouillon puis démarre un run dessus (épingle
@@ -99,34 +88,27 @@ export async function startRunAction(
 export async function advanceStepAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
   await advanceStep(store, runId);
-  revalidatePath(runPath(runId));
 }
 
 export async function skipStepAction(runId: string, stepId: string): Promise<void> {
   const { store } = getBenchSession();
   await skipStep(store, stepId);
-  revalidatePath(runPath(runId));
 }
 
 /** Recule d'une étape (annule un « Done » accidentel). */
 export async function stepBackAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
   await stepBack(store, runId);
-  revalidatePath(runPath(runId));
 }
 
 export async function pauseRunAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
   await pauseRun(store, runId);
-  revalidatePath(runPath(runId));
-  revalidatePath("/bench");
 }
 
 export async function resumeRunAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
   await resumeRun(store, runId);
-  revalidatePath(runPath(runId));
-  revalidatePath("/bench");
 }
 
 export async function captureNoteAction(
@@ -137,7 +119,6 @@ export async function captureNoteAction(
   const { store, ctx } = getBenchSession();
   const evidence = await captureNote(store, runId, stepId, text, ctx.userId);
   await indexEvidence(store, evidence);
-  revalidatePath(runPath(runId));
 }
 
 export async function captureMeasurementAction(
@@ -148,7 +129,6 @@ export async function captureMeasurementAction(
   const { store, ctx } = getBenchSession();
   const evidence = await captureMeasurement(store, runId, stepId, m, ctx.userId);
   await indexEvidence(store, evidence);
-  revalidatePath(runPath(runId));
 }
 
 export async function captureDeviationAction(
@@ -159,7 +139,6 @@ export async function captureDeviationAction(
   const { store, ctx } = getBenchSession();
   const evidence = await captureDeviation(store, runId, stepId, d, ctx.userId);
   await indexEvidence(store, evidence);
-  revalidatePath(runPath(runId));
 }
 
 /** Supprime une observation (note, mesure, déviation, photo, data). Les bytes
@@ -168,7 +147,6 @@ export async function captureDeviationAction(
 export async function deleteEvidenceAction(runId: string, evidenceId: string): Promise<void> {
   const { store } = getBenchSession();
   await deleteEvidence(store, evidenceId);
-  revalidatePath(runPath(runId));
 }
 
 /** Termine le run, génère le rapport auditable (Brique Auto Report — repli

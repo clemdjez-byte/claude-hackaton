@@ -2,6 +2,7 @@
 // Le bureau : monte l'état des fenêtres, le contexte qui l'expose, le fond
 // navigable (Galaxy), la pilule d'outils, la cartouche chat, et empile les
 // fenêtres ouvertes par-dessus le tout.
+import { useMemo } from "react";
 import { useWindows } from "./useWindows";
 import { WindowsContext } from "./WindowsContext";
 import { Window } from "./Window";
@@ -12,25 +13,29 @@ import { Galaxy } from "./Galaxy";
 
 export function Desktop() {
   const api = useWindows();
+  const { windows, activeId, focus } = api;
 
-  const tabs = (
-    <>
-      {api.windows.map((w) => (
-        <button
-          key={w.id}
-          type="button"
-          className={`desktop-tab${w.id === api.activeId ? " active" : ""}`}
-          onClick={() => api.focus(w.id)}
-        >
-          {w.title}
-        </button>
-      ))}
-    </>
+  const tabs = useMemo(
+    () => (
+      <>
+        {windows.map((w) => (
+          <button
+            key={w.id}
+            type="button"
+            className={`desktop-tab${w.id === activeId ? " active" : ""}`}
+            onClick={() => focus(w.id)}
+          >
+            {w.title}
+          </button>
+        ))}
+      </>
+    ),
+    [windows, activeId, focus]
   );
 
   return (
     <WindowsContext.Provider value={api}>
-      <div className={`desktop${api.windows.some((w) => w.layout === "full") ? " has-full" : ""}`}>
+      <div className="desktop">
         <Galaxy />
         <div className="hero">
           <p className="eyebrow">Octopus — wet lab OS</p>

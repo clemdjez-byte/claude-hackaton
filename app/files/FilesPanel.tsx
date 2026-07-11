@@ -6,8 +6,8 @@
 // propre id de page — le meta le porte déjà (voir app/api/files/route.ts).
 import { useEffect, useState } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
+import type { PageMeta } from "./types";
 
-type PageMeta = { id: string; title: string; createdAt: string; type: string; runId?: string };
 type FilesResponse = { reports: PageMeta[]; protocols: PageMeta[] };
 
 // Date ISO figée (stockée) → affichage compact et déterministe (pas de tz).
