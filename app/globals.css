@@ -1,59 +1,726 @@
 @import "tailwindcss";
+@source "../app/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
 
-/* ── Sylvy design tokens (--sy-*) ──────────────────────────────────────
-   Papier de labo éditorial : crème chaud, encre presque noire, Sylvy Green
-   réservé à un moment héros. Pas de blanc pur, aucun gradient. */
 :root {
-  --sy-cream: #faf9f4;         /* fond chaud, jamais de blanc pur */
-  --sy-cream-2: #f4f2ea;       /* surface légèrement enfoncée */
-  --sy-ink: #1e1e1e;           /* encre — bouton primaire, texte fort */
-  --sy-ink-muted: #6b6a63;     /* texte secondaire chaud */
-  --sy-line: #e7e4d8;          /* bordures fines */
-  --sy-green: #1fb958;         /* Sylvy Green — un moment héros par surface */
-  --sy-green-deep: #117833;    /* actions à conséquence */
-  --sy-amber: #b7791f;         /* déviation / attention */
-  --sy-red: #b4322b;           /* erreur / déviation critique */
-  --sy-radius: 14px;           /* cartes */
-  --sy-shadow: 0 1px 2px rgba(30, 30, 20, 0.04), 0 8px 24px rgba(30, 30, 20, 0.04);
+  /* === Sylvy design tokens (source: ~/.claude/skills/sylvy-design) === */
+  --background: #FAF9F4;        /* sy-cream */
+  --surface: #ffffff;            /* sy-paper */
+  --surface-2: #F0EDE3;          /* sy-paper-2 */
+  --surface-3: #E5E0D4;          /* sy-paper-3 */
+  --foreground: #1E1E1E;         /* sy-ink */
+  --ink-soft: #3a342c;           /* sy-ink-soft */
+  --muted: #6f6a60;              /* sy-muted */
+  --muted-soft: #a8a298;         /* sy-muted-soft */
+  --border: #E5E2D8;             /* sy-border */
+  --border-strong: #C8C5B6;      /* sy-border-strong */
+
+  /* Green system — anchor at Sylvy Green #1FB958, primary accent = deep moss */
+  --accent: #117833;             /* sy-accent — deep moss, primary action */
+  --accent-bright: #1FB958;      /* sy-accent-bright — Sylvy Green, brand-only */
+  --accent-soft: #D8EFDE;        /* sy-accent-soft — calmed from #C5F0D2 */
+  --highlight: #f5edd3;
+  --danger: #E0341E;             /* sy-danger */
+  --warning: #E89A1A;             /* sy-warning */
+  --info: #1FC1E0;                /* sy-info */
+  --success: #1FB958;             /* sy-success — = accent-bright */
+
+  --status-active: var(--accent);
+  --status-idle: var(--muted-soft);
+  --status-coming-soon: var(--border-strong);
+  --status-amber: var(--warning);
+
+  /* Spectre Sylvy (utilisé pour donner une identité couleur aux agents et
+     ponctuer l'interface). Toutes les valeurs sont flat, jamais en gradient. */
+  --sy-forest: #0A4F26;        /* vert forêt — shade */
+  --sy-emerald: #1A9E47;       /* vert émeraude — core */
+  --sy-aqua: #0F9DAE;           /* aqua — shade */
+  --sy-turquoise: #1FB6C1;     /* turquoise — core */
+  --sy-leaf: #7FE0A3;           /* vert clair — tint */
+  --sy-mist: #C5F0D2;           /* turquoise très clair — tint */
+  --sy-amber-soft: #FCE6BE;     /* amber clair — tint */
+  --sy-brick-soft: #FAD6D0;     /* brick clair — tint */
+  --sy-info-soft: #CBEEF6;     /* aqua très clair — tint */
 }
 
-/* Expose les tokens comme utilitaires Tailwind (bg-sy-cream, text-sy-ink, …) */
 @theme inline {
-  --color-sy-cream: var(--sy-cream);
-  --color-sy-cream-2: var(--sy-cream-2);
-  --color-sy-ink: var(--sy-ink);
-  --color-sy-ink-muted: var(--sy-ink-muted);
-  --color-sy-line: var(--sy-line);
-  --color-sy-green: var(--sy-green);
-  --color-sy-green-deep: var(--sy-green-deep);
-  --color-sy-amber: var(--sy-amber);
-  --color-sy-red: var(--sy-red);
-  --radius-sy: var(--sy-radius);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-foreground: var(--foreground);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-bright: var(--accent-bright);
+  --color-accent-soft: var(--accent-soft);
+  --color-highlight: var(--highlight);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-success: var(--success);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-eyebrow: var(--font-jetbrains-mono);
+  --font-mono-display: var(--font-jetbrains-mono);
+  --color-status-active: var(--status-active);
+  --color-status-idle: var(--status-idle);
+  --color-status-coming-soon: var(--status-coming-soon);
+  --color-status-amber: var(--status-amber);
+}
+
+html {
+  background: var(--background);
 }
 
 body {
-  background: var(--sy-cream);
-  color: var(--sy-ink);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
-/* Eyebrow mono 11px uppercase — le rythme éditorial Sylvy */
-.sy-eyebrow {
-  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
-  font-size: 11px;
-  line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sy-ink-muted);
+::selection {
+  background: var(--highlight);
+  color: var(--foreground);
 }
 
-.sy-card {
-  background: var(--sy-cream);
-  border: 1px solid var(--sy-line);
-  border-radius: var(--sy-radius);
-  box-shadow: var(--sy-shadow);
+button, a {
+  -webkit-tap-highlight-color: transparent;
 }
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 1px 0 rgba(20, 17, 13, 0.02), 0 2px 8px rgba(20, 17, 13, 0.03);
+    transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+  }
+
+  .card-hover:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 1px 0 rgba(20, 17, 13, 0.02), 0 6px 18px rgba(20, 17, 13, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-geist-mono), monospace;
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    border: 1px solid transparent;
+    transition: all 180ms ease;
+  }
+
+  .tag:hover {
+    border-color: var(--border-strong);
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .btn-primary {
+    background: var(--foreground);
+    color: var(--background);
+    border-radius: 10px;
+    font-weight: 500;
+    /* Padding par défaut : les usages qui posent leur propre px/py (utilities)
+       le surchargent ; ceux qui n'en posent pas héritent d'une taille saine. */
+    padding: 9px 18px;
+    font-size: 14px;
+    line-height: 1.2;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-accent {
+    background: var(--accent);
+    color: white;
+    border-radius: 10px;
+    font-weight: 500;
+    /* Padding par défaut (voir .btn-primary). */
+    padding: 9px 18px;
+    font-size: 14px;
+    line-height: 1.2;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .btn-accent:hover:not(:disabled) {
+    opacity: 0.92;
+  }
+
+  .btn-accent:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .input-field {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .input-field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .status-dot.active {
+    background: var(--status-active);
+    box-shadow: 0 0 0 3px rgba(17, 120, 51, 0.15);
+    animation: pulse-active 2.4s ease-in-out infinite;
+  }
+
+  /* Variante teintée : utilise la couleur d'identité de l'agent pour le halo.
+     `--dot-tint` est posée en inline-style par <StatusDot tint=… />. */
+  .status-dot.active.tinted {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-tint, var(--accent)) 18%, transparent);
+    animation: pulse-tinted 2.4s ease-in-out infinite;
+  }
+
+  .status-dot.idle {
+    background: var(--status-idle);
+  }
+
+  .status-dot.coming-soon {
+    background: transparent;
+    border: 1.5px dashed var(--status-coming-soon);
+  }
+
+  .status-dot.amber {
+    background: var(--status-amber);
+  }
+
+  .mono-display {
+    font-family: var(--font-mono-display), var(--font-mono), ui-monospace, monospace;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  .agent-tag {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono-display), var(--font-mono), ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+
+  .agent-tag.beta {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .agent-tag.soon {
+    background: var(--surface-2);
+    color: var(--muted-soft);
+    border: 1px dashed var(--border-strong);
+  }
+
+  /* ===== Pills & chips (style Mistral × Sylvy) =====================
+     .pill   — capsule mono UPPERCASE pour status et sections.
+     .chip   — capsule plus large, normal-case, pour CTA secondaires.
+     .receipt — caption mono sous un titre, façon "instrument label". */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono-display), var(--font-mono), monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    border: 1px solid transparent;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
+
+  .pill:hover {
+    border-color: var(--border-strong);
+  }
+
+  .pill.accent {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .pill.bright {
+    background: var(--surface);
+    color: var(--accent-bright);
+    border-color: var(--accent-soft);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    border: 1px solid var(--border);
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+    cursor: pointer;
+  }
+
+  .chip:hover {
+    background: var(--surface-2);
+    border-color: var(--border-strong);
+    color: var(--foreground);
+  }
+
+  .chip:active {
+    transform: scale(0.97);
+  }
+
+  .chip-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--muted);
+    transition: color 160ms ease;
+    flex-shrink: 0;
+  }
+  .chip:hover .chip-icon {
+    color: var(--accent);
+  }
+
+  .receipt {
+    font-family: var(--font-mono-display), var(--font-mono), monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Hero display heading — fluid clamp, ultra-tight tracking, calme.
+     Sert pour le greeting d'accueil et les hero moments. */
+  .hero-display {
+    font-size: clamp(2.5rem, 5vw + 0.5rem, 4.5rem);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.02;
+  }
+
+  /* Variante pill pour les onglets façon Mistral : capsule compacte, hover tint. */
+  .tab-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 999px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+    border: 1px solid transparent;
+  }
+  .tab-pill:hover {
+    background: var(--surface-2);
+    color: var(--foreground);
+  }
+  .tab-pill.active {
+    background: var(--surface);
+    color: var(--foreground);
+    border-color: var(--border);
+  }
+}
+
+@layer utilities {
+  .fade-in {
+    animation: fadeIn 500ms ease-out both;
+  }
+
+  .fade-up {
+    animation: fadeUp 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .pulse-soft {
+    animation: pulse-soft 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes pulse-active {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(17, 120, 51, 0.15); }
+  50% { box-shadow: 0 0 0 5px rgba(17, 120, 51, 0.08); }
+}
+
+@keyframes pulse-tinted {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-tint, var(--accent)) 18%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--dot-tint, var(--accent)) 9%, transparent); }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid var(--background);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-soft);
+}
+
+/* Tiptap editor + rendered HTML notes: minimal prose styling so the
+   Word-like editor looks right without pulling in @tailwindcss/typography. */
+.sophie-editor .ProseMirror,
+.note-html {
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.sophie-editor .ProseMirror :is(h1),
+.note-html :is(h1) {
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--foreground);
+}
+.sophie-editor .ProseMirror :is(h2),
+.note-html :is(h2) {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--foreground);
+}
+.sophie-editor .ProseMirror :is(h3),
+.note-html :is(h3) {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.35rem;
+  color: var(--foreground);
+}
+.sophie-editor .ProseMirror :is(p),
+.note-html :is(p) {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.sophie-editor .ProseMirror :is(ul, ol),
+.note-html :is(ul, ol) {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+.sophie-editor .ProseMirror :is(ul) :is(li),
+.note-html :is(ul) :is(li) {
+  list-style: disc;
+}
+.sophie-editor .ProseMirror :is(ol) :is(li),
+.note-html :is(ol) :is(li) {
+  list-style: decimal;
+}
+.sophie-editor .ProseMirror :is(li),
+.note-html :is(li) {
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
+}
+.sophie-editor .ProseMirror :is(strong),
+.note-html :is(strong) {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.sophie-editor .ProseMirror :is(em),
+.note-html :is(em) {
+  font-style: italic;
+}
+.sophie-editor .ProseMirror :is(code),
+.note-html :is(code) {
+  font-family: var(--font-mono-display);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+}
+.sophie-editor .ProseMirror :is(blockquote),
+.note-html :is(blockquote) {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 1rem;
+  color: var(--muted);
+  margin: 0.75rem 0;
+  font-style: italic;
+}
+.sophie-editor .ProseMirror:focus {
+  outline: none;
+}
+.sophie-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-soft);
+  float: left;
+  pointer-events: none;
+  height: 0;
+}
+
+.sophie-editor .ProseMirror .context-preview-source {
+  background: color-mix(in srgb, var(--sy-info-soft) 82%, transparent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--sy-info-soft) 82%, transparent);
+  border-radius: 6px;
+}
+
+.sophie-editor .ProseMirror .context-preview-replace {
+  background: color-mix(in srgb, var(--accent-soft) 86%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+
+.sophie-editor .ProseMirror .context-preview-delete {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--danger) 52%, transparent);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+
+.sophie-editor .ProseMirror .context-preview-insert-after,
+.sophie-editor .ProseMirror .context-preview-insert-start {
+  position: relative;
+}
+
+.sophie-editor .ProseMirror .context-preview-insert-after::after,
+.sophie-editor .ProseMirror .context-preview-insert-start::before {
+  content: "";
+  display: block;
+  height: 3px;
+  margin: 12px 0;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent-soft) 86%, transparent);
+}
+
+/* Liens [[ ]] entre pages du notebook (node Mention de Tiptap). */
+.wikilink,
+.note-html [data-type="mention"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wikilink:hover,
+.note-html [data-type="mention"]:hover {
+  background: var(--highlight);
+}
+/* Décoration du texte "[[…" pendant la frappe, avant sélection. */
+.sophie-editor .ProseMirror .suggestion {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Liens hypertexte. */
+.sophie-editor .ProseMirror :is(a),
+.note-html :is(a) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Blocs de code. */
+.sophie-editor .ProseMirror :is(pre),
+.note-html :is(pre) {
+  background: var(--surface-2);
+  border-radius: 0.4rem;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+}
+.sophie-editor .ProseMirror :is(pre) :is(code),
+.note-html :is(pre) :is(code) {
+  background: none;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+/* Trait de séparation. */
+.sophie-editor .ProseMirror :is(hr),
+.note-html :is(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0;
+}
+
+/* Cases à cocher (Tiptap TaskList). */
+.sophie-editor .ProseMirror ul[data-type="taskList"],
+.note-html ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.sophie-editor .ProseMirror ul[data-type="taskList"] li,
+.note-html ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  list-style: none;
+}
+.sophie-editor .ProseMirror ul[data-type="taskList"] li > label,
+.note-html ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.3rem;
+}
+.sophie-editor .ProseMirror ul[data-type="taskList"] li > div,
+.note-html ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+/* Tableaux (Tiptap Table + rendu HTML). */
+.sophie-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.sophie-editor .ProseMirror table,
+.note-html table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75rem 0;
+  font-size: 0.95em;
+  table-layout: fixed;
+}
+.sophie-editor .ProseMirror :is(th, td),
+.note-html :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  position: relative;
+}
+.sophie-editor .ProseMirror :is(th),
+.note-html :is(th) {
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.sophie-editor .ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+.sophie-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* ===================== NOTEBOOK — poignées de redimensionnement ===================== */
+/* Poignée de drag entre deux panneaux du carnet. La largeur réelle attrapable
+   fait 12px ; le trait visible (::before) est centré dedans pour que la ligne
+   qu'on voit soit exactement la zone qu'on glisse. */
+.nb-splitter {
+  flex: 0 0 12px;
+  position: relative;
+  cursor: col-resize;
+  z-index: 50;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.nb-splitter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border-strong);
+  border-radius: 2px;
+  transition: background 0.15s ease, width 0.12s ease;
+}
+.nb-splitter:hover::before,
+.nb-splitter[data-active="true"]::before {
+  width: 4px;
+  background: var(--accent);
+}
+/* empreinte de grip au survol */
+.nb-splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 34px;
+  border-radius: 3px;
+  background: var(--muted-soft);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.nb-splitter:hover::after {
+  opacity: 0.6;
+}
+.nb-splitter[data-active="true"]::after {
+  opacity: 0;
+}
+/* pendant le drag : curseur col-resize partout, pas de sélection de texte */
+body.nb-resizing,
+body.nb-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  /* glissé instantané : on coupe les transitions le temps du redimensionnement */
+  transition: none !important;
+}
+

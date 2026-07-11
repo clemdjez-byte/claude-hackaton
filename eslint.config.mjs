@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Tooling hors périmètre de l'app Next : skills gstack vendorisés (leur
+    // propre suite de tests, pas du code Octopus) et octopus-mcp (paquet npm
+    // séparé, son propre tsconfig/toolchain — traité en Task 8).
+    ".claude/**",
+    "octopus-mcp/**",
   ]),
 ]);
 
