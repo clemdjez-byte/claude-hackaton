@@ -219,12 +219,20 @@
   display: none;
 }
 
-/* decorative background layer + hero caption, both non-interactive */
+/* background layer: decorative AND navigable (click a node → open its window).
+   Sits at z-index 0, under the toolbar/entry (z-index 6) and windows
+   (z-index 20+) — those stay on top and clickable regardless. */
 .galaxy {
   position: absolute;
   inset: 0;
   z-index: 0;
-  pointer-events: none;
+  display: block;
+  /* <canvas> is a replaced element: inset:0 alone does NOT stretch it to fill
+     the container (its own width/height attributes — set in JS for backing-
+     store resolution — give it an intrinsic size that wins over the inset-
+     derived stretch). Explicit 100%/100% forces full-bleed regardless. */
+  width: 100%;
+  height: 100%;
 }
 .hero {
   position: absolute;

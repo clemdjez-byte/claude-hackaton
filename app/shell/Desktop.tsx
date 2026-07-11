@@ -1,15 +1,14 @@
 "use client";
-// Le bureau : monte l'état des fenêtres, le contexte qui l'expose, la pilule
-// d'outils, la cartouche chat, et empile les fenêtres ouvertes par-dessus le
-// fond. Le fond animé (Galaxy) arrive Task 9 — le hero fait office de fond
-// statique en attendant.
+// Le bureau : monte l'état des fenêtres, le contexte qui l'expose, le fond
+// navigable (Galaxy), la pilule d'outils, la cartouche chat, et empile les
+// fenêtres ouvertes par-dessus le tout.
 import { useWindows } from "./useWindows";
 import { WindowsContext } from "./WindowsContext";
 import { Window } from "./Window";
 import { WindowContent } from "./WindowContent";
 import { Toolbar } from "./Toolbar";
 import { ChatDock } from "./ChatDock";
-// import { Galaxy } from "./Galaxy"; // Task 9
+import { Galaxy } from "./Galaxy";
 
 export function Desktop() {
   const api = useWindows();
@@ -32,7 +31,7 @@ export function Desktop() {
   return (
     <WindowsContext.Provider value={api}>
       <div className={`desktop${api.windows.some((w) => w.layout === "full") ? " has-full" : ""}`}>
-        {/* <Galaxy /> — Task 9 */}
+        <Galaxy />
         <div className="hero">
           <p className="eyebrow">Octopus — wet lab OS</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">

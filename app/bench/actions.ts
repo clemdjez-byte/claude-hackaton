@@ -29,7 +29,7 @@ import {
   exportReportMarkdown,
 } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
-import { indexProtocol, indexEvidence, indexRun, indexReport } from "@/lib/rag";
+import { indexProtocol, indexEvidence, indexRun, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
 
 function protocolPath(protocolId: string) {
   return `/bench/protocols/${protocolId}`;
@@ -90,6 +90,7 @@ export async function startRunAction(
     protocolVersion: version, // épingle la version FIGÉE, pas le brouillon mutable
     params: { n_reactions: n, overage_pct: overage },
   });
+  await linkRunToProtocol(store, runCtx.run.id, protocolId); // best-effort, cf. lib/rag.ts
   return { runId: runCtx.run.id };
 }
 
@@ -184,6 +185,7 @@ export async function completeRunAction(runId: string): Promise<{ runId: string 
   const run = await completeRun(store, runId);
   try {
     const report = await generateReport(store, runId);
+    await linkReportToRun(store, report.id, runId); // best-effort, cf. lib/rag.ts
     if (ctx) await indexRun(store, run, ctx.protocol.title, ctx.steps);
     const markdown = await exportReportMarkdown(store, runId);
     await indexReport(store, report, markdown);
