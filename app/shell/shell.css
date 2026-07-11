@@ -1,0 +1,235 @@
+/* Desktop shell — window frame, drag/resize handles, toolbar, entry bar.
+   Colors fall back to the neutral --oct-* tokens already used across the app
+   (see app/globals.css), matching the convention in RunConsole.tsx / ProtocolsClient.tsx. */
+
+.desktop {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--background);
+}
+
+/* windows */
+.window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: var(--oct-paper, #fff);
+  border: 1px solid var(--oct-border, #e5e2d8);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+.window.active {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+}
+.window.full {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+  border: none;
+}
+.window.full .rz {
+  display: none;
+}
+
+.win-bar {
+  position: relative;
+  height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  cursor: grab;
+  border-bottom: 1px solid var(--oct-border, #e5e2d8);
+  user-select: none;
+}
+.win-bar.dragging {
+  cursor: grabbing;
+}
+.win-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.win-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.win-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+/* resize handles — every edge + corner, 6px on the edges / 12px on the corners */
+.rz {
+  position: absolute;
+  touch-action: none;
+}
+.rz-n {
+  top: -3px;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  cursor: ns-resize;
+}
+.rz-s {
+  left: 0;
+  bottom: -3px;
+  height: 6px;
+  width: 100%;
+  cursor: ns-resize;
+}
+.rz-e {
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+}
+.rz-w {
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+}
+.rz-ne {
+  top: -3px;
+  right: -3px;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+}
+.rz-nw {
+  top: -3px;
+  left: -3px;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+}
+.rz-se {
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+}
+.rz-sw {
+  left: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+}
+
+/* tabs, shown in the title bar only when the window is fullscreen */
+.win-tablist {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+.desktop-tab {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  border: 1px solid var(--oct-border, #e5e2d8);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease;
+}
+.desktop-tab:hover {
+  background: var(--oct-paper-2, #f0ede3);
+  color: var(--foreground);
+}
+.desktop-tab.active {
+  background: var(--oct-paper-2, #f0ede3);
+  color: var(--foreground);
+}
+
+/* floating toolbar */
+.toolbar {
+  position: absolute;
+  top: 120px;
+  left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--oct-border, #e5e2d8);
+  z-index: 6;
+}
+.tbtn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.tbtn:hover {
+  background: var(--oct-paper-2, #f0ede3);
+  color: var(--foreground);
+}
+
+/* command entry bar, bottom center */
+.entry {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  width: 640px;
+  max-width: 90vw;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--oct-border, #e5e2d8);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  z-index: 6;
+  cursor: text;
+}
+.entry-hidden {
+  display: none;
+}
+
+/* decorative background layer + hero caption, both non-interactive */
+.galaxy {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.hero {
+  position: absolute;
+  top: 40px;
+  left: 30px;
+  z-index: 1;
+  pointer-events: none;
+}
