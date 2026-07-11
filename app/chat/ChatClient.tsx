@@ -3,8 +3,9 @@
 // pas de persistance de fil, un lecteur NDJSON maison (même découpe que
 // RunConsole côté voix). L'historique vit en mémoire côté client et voyage
 // dans chaque requête (YAGNI démo).
-import Link from "next/link";
 import { useRef, useState } from "react";
+import { useWindowsContext } from "@/app/shell/WindowsContext";
+import type { WindowKind } from "@/app/shell/useWindows";
 
 type Role = "user" | "assistant";
 type SourceHit = { sourceType: string; sourceId: string; score: number; meta?: Record<string, unknown> };
@@ -16,28 +17,29 @@ const SUGGESTIONS = [
   "Which deviations should I care about?",
 ];
 
-/** Page qui existe pour ce type de source, si l'id nécessaire est connu. */
-function sourceHref(hit: SourceHit): string | null {
+/** Fenêtre à ouvrir pour ce type de source, si l'id nécessaire est connu. */
+function sourceWindow(hit: SourceHit): { kind: WindowKind; params: Record<string, string> } | null {
   const runId = typeof hit.meta?.runId === "string" ? hit.meta.runId : null;
   switch (hit.sourceType) {
     case "protocol":
-      return `/bench/protocols/${hit.sourceId}`;
+      return { kind: "protocol", params: { protocolId: hit.sourceId } };
     case "run":
-      return `/bench/run/${hit.sourceId}`;
+      return { kind: "run", params: { runId: hit.sourceId } };
     case "report":
-      return runId ? `/bench/report/${runId}` : null;
+      return runId ? { kind: "report", params: { runId } } : null;
     case "evidence":
-      return runId ? `/bench/run/${runId}` : null;
+      return runId ? { kind: "run", params: { runId } } : null;
     default:
       return null;
   }
 }
 
 function SourceChip({ hit }: { hit: SourceHit }) {
-  const href = sourceHref(hit);
+  const { open } = useWindowsContext();
+  const target = sourceWindow(hit);
   const label = `${hit.sourceType}:${hit.sourceId.slice(0, 8)}`;
   const title = `score ${hit.score.toFixed(2)}`;
-  if (!href) {
+  if (!target) {
     return (
       <span className="pill opacity-60" title={`${title} — no page for this source`}>
         {label}
@@ -45,9 +47,14 @@ function SourceChip({ hit }: { hit: SourceHit }) {
     );
   }
   return (
-    <Link href={href} className="pill accent" title={title}>
+    <button
+      type="button"
+      onClick={() => open(target.kind, target.params)}
+      className="pill accent"
+      title={title}
+    >
       {label}
-    </Link>
+    </button>
   );
 }
 

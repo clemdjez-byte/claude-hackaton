@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { Evidence, Step } from "@/lib/core";
 import type { RunContext } from "@/lib/bench";
 import { WebcamCapture } from "./WebcamCapture";
@@ -15,9 +14,9 @@ import {
   captureDeviationAction,
   deleteEvidenceAction,
   completeRunAction,
-} from "../../actions";
-import { useVoice } from "../../useVoice";
-import { takeSentences } from "../../sentences";
+} from "./actions";
+import { useVoice } from "./useVoice";
+import { takeSentences } from "./sentences";
 import type { VoiceLang } from "@/lib/bench";
 
 type ActiveTimer = { id: number; label: string; remaining: number; running: boolean };
@@ -92,12 +91,15 @@ export default function RunConsole({
   runContext,
   evidence,
   attachmentUrls,
+  reload,
 }: {
   runContext: RunContext;
   evidence: Evidence[];
   attachmentUrls: Record<string, string>; // URLs locales (/api/files/[fileId]) des preuves fichier (photo + data)
+  reload: () => Promise<void>; // refetch /api/bench/run/[id] (remplace router.refresh() de l'ancien modèle serveur)
 }) {
   const { run, protocol } = runContext;
+  const { open } = useWindowsContext();
   const [pending, start] = useTransition();
   // Transition DÉDIÉE aux étapes : l'avance est optimiste + sauvegardée en
   // arrière-plan, sans jamais griser Finish ni les captures.
@@ -117,7 +119,9 @@ export default function RunConsole({
   function mutateStep(m: StepMutation, action: () => Promise<void>) {
     startStep(() => {
       applyStep(m); // écran instantané
-      const send = () => action().catch(() => {}); // erreur → l'optimiste retombe sur les props
+      // erreur → l'optimiste retombe sur les props ; succès ou échec, on
+      // recharge ensuite le contexte de run pour rester la source de vérité.
+      const send = () => action().catch(() => {}).then(() => reload());
       stepQueue.current = stepQueue.current.then(send, send);
       return stepQueue.current; // la transition reste ouverte tant que la file tourne
     });
@@ -150,7 +154,15 @@ export default function RunConsole({
   function confirmFinish() {
     if (finishing) return;
     setFinishing(true);
-    start(() => completeRunAction(run.id));
+    start(async () => {
+      try {
+        const { runId } = await completeRunAction(run.id);
+        await reload();
+        open("report", { runId });
+      } finally {
+        setFinishing(false);
+      }
+    });
   }
 
   const stepId = currentStep?.id; // la capture s'attache à l'étape EN COURS
@@ -171,7 +183,6 @@ export default function RunConsole({
   const canPrev = live && (currentIdx === null ? steps.length > 0 : currentIdx > 0);
 
   // ── Copilote vocal (Web Speech côté navigateur + Claude côté serveur) ──
-  const router = useRouter();
   const [reply, setReply] = useState("");
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [timers, setTimers] = useState<ActiveTimer[]>([]);
@@ -319,7 +330,7 @@ export default function RunConsole({
       const tail = buffer.trim();
       if (tail) voice.speakChunk(tail);
       voice.speakDone();
-      if (didAct) router.refresh();
+      if (didAct) await reload();
     } catch {
       setReply(NET_ERROR);
       voice.speakChunk(NET_ERROR);
@@ -372,7 +383,7 @@ export default function RunConsole({
           throw new Error(b.error ?? `Error ${res.status}`);
         }
       }
-      router.refresh();
+      await reload();
     } catch (e) {
       setPhotoError(e instanceof Error ? e.message : "Photo upload failed.");
     } finally {
@@ -397,7 +408,7 @@ export default function RunConsole({
           throw new Error(b.error ?? `Error ${res.status}`);
         }
       }
-      router.refresh();
+      await reload();
     } catch (e) {
       setDataError(e instanceof Error ? e.message : "Data import failed.");
     } finally {
@@ -407,15 +418,15 @@ export default function RunConsole({
 
   return (
     <div className="relative h-full flex flex-col overflow-hidden px-4 sm:px-6 lg:px-8 py-4 gap-3 w-full">
-      {/* Overlay de clôture : le run se termine (quelques secondes) puis on
-          retourne au tableau de bord Bench. */}
+      {/* Overlay de clôture : le run se termine (quelques secondes) puis le
+          rapport s'ouvre dans une nouvelle fenêtre. */}
       {finishing && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--oct-paper,#FAF9F4)]/85 backdrop-blur-sm text-center px-6">
           <span className="status-dot active" aria-hidden />
           <div>
             <p className="text-lg font-semibold tracking-tight">Finishing your run</p>
             <p className="text-sm text-muted mt-1 max-w-sm">
-              Closing the run and returning to the bench. This takes a few seconds.
+              Closing the run and opening your report. This takes a few seconds.
             </p>
           </div>
         </div>
@@ -425,12 +436,13 @@ export default function RunConsole({
       <header className="shrink-0 fade-in flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <Link
-              href="/bench"
+            <button
+              type="button"
+              onClick={() => open("bench-hub")}
               className="text-[13px] text-muted hover:text-foreground transition-colors shrink-0"
             >
               ← Bench
-            </Link>
+            </button>
             <h1 className="text-lg font-semibold tracking-tight truncate">{protocol.title}</h1>
             <span className={`pill ${run.status === "completed" ? "accent" : ""}`}>{run.status}</span>
             <span className="receipt">{doneCount}/{steps.length} steps</span>
@@ -830,6 +842,7 @@ export default function RunConsole({
                       start(async () => {
                         await captureNoteAction(run.id, stepId, note.trim());
                         setNote("");
+                        await reload();
                       })
                     }
                     className="btn-primary w-full disabled:opacity-50"
@@ -873,6 +886,7 @@ export default function RunConsole({
                           unit: meas.unit.trim() || DIMENSIONLESS,
                         });
                         setMeas({ name: "", value: "", unit: "" });
+                        await reload();
                       })
                     }
                     className="btn-primary w-full disabled:opacity-50"
@@ -925,6 +939,7 @@ export default function RunConsole({
                           reason: dev.reason.trim() || undefined,
                         });
                         setDev({ expected: "", actual: "", severity: "major", reason: "" });
+                        await reload();
                       })
                     }
                     className="btn-primary w-full disabled:opacity-50"
@@ -1068,6 +1083,7 @@ export default function RunConsole({
                             start(async () => {
                               await deleteEvidenceAction(run.id, e.id);
                               setConfirmDeleteId(null);
+                              await reload();
                             })
                           }
                           className="text-[12px] font-medium text-danger hover:underline disabled:opacity-50"

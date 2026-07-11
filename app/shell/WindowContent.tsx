@@ -1,10 +1,16 @@
 "use client";
 // Routeur de panneaux — un Window ne connaît que son win.kind ; c'est ici
-// qu'on le mappe vers le composant réel. Tasks 7-8 branchent bench-hub,
-// protocols, protocol, run, report, files, import ; en attendant ils tombent
-// sur le placeholder "Coming soon".
+// qu'on le mappe vers le composant réel. 'import' réutilise ProtocolsPanel
+// (sa section « New protocol » couvre déjà la génération depuis fichiers ou
+// prompt) ; 'files' arrive Task 8, en attendant il tombe sur le placeholder
+// "Coming soon".
 import type { Win } from "./useWindows";
 import ChatClient from "@/app/chat/ChatClient";
+import BenchHubPanel from "@/app/bench/BenchHubPanel";
+import ProtocolsPanel from "@/app/bench/ProtocolsPanel";
+import ProtocolPanel from "@/app/bench/ProtocolPanel";
+import RunPanel from "@/app/bench/RunPanel";
+import ReportPanel from "@/app/bench/ReportPanel";
 
 export function WindowContent({ win }: { win: Win }) {
   switch (win.kind) {
@@ -12,7 +18,18 @@ export function WindowContent({ win }: { win: Win }) {
       return <ChatClient />;
     case "settings":
       return <div className="p-6 text-sm">Workspace: demo</div>;
-    // 'import', 'bench-hub', 'protocols', 'protocol', 'run', 'report', 'files' → branchés Tasks 7-8
+    case "bench-hub":
+      return <BenchHubPanel />;
+    case "protocols":
+    case "import":
+      return <ProtocolsPanel />;
+    case "protocol":
+      return <ProtocolPanel pageId={win.params!.protocolId} />;
+    case "run":
+      return <RunPanel runId={win.params!.runId} />;
+    case "report":
+      return <ReportPanel runId={win.params!.runId} />;
+    // 'files' → branché Task 8
     default:
       return <div className="p-6 text-sm opacity-60">Coming soon: {win.kind}</div>;
   }

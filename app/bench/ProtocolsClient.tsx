@@ -1,17 +1,16 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter, unstable_rethrow } from "next/navigation";
+import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { Protocol } from "@/lib/core/types";
-import { generateProtocolAction } from "../actions";
+import { generateProtocolAction } from "./actions";
 
 // Types acceptés = ceux que le pipeline d'extraction sait lire (OCR / docx /
 // texte). On liste extensions ET wildcards pour éviter que macOS grise les .md.
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.docx,.md,.markdown,.txt,application/pdf,image/*";
 
 export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }) {
-  const router = useRouter();
+  const { open } = useWindowsContext();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -48,7 +47,7 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
         error?: string;
       };
       if (!res.ok || !body.protocolId) throw new Error(body.error ?? `Error ${res.status}`);
-      router.push(`/bench/protocols/${body.protocolId}`);
+      open("protocol", { protocolId: body.protocolId });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read those documents.");
       setUploading(false);
@@ -67,11 +66,9 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
     setError(null);
     start(async () => {
       try {
-        await generateProtocolAction(text);
+        const { protocolId } = await generateProtocolAction(text);
+        open("protocol", { protocolId });
       } catch (e) {
-        // generateProtocolAction redirects on success (throws internally) —
-        // let that pass through, only report real failures.
-        unstable_rethrow(e);
         setError(e instanceof Error ? e.message : "Could not draft that protocol.");
       }
     });
@@ -210,10 +207,11 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {protocols.map((p) => (
-              <Link
+              <button
                 key={p.id}
-                href={`/bench/protocols/${p.id}`}
-                className="card card-hover block p-5 fade-up"
+                type="button"
+                onClick={() => open("protocol", { protocolId: p.id })}
+                className="card card-hover block p-5 fade-up text-left w-full"
               >
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="font-medium leading-snug">{p.title}</h3>
@@ -227,18 +225,19 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
                 {p.summary && (
                   <p className="text-[13px] text-muted mt-2 leading-snug">{p.summary}</p>
                 )}
-              </Link>
+              </button>
             ))}
           </div>
         )}
       </section>
 
-      <Link
-        href="/bench"
+      <button
+        type="button"
+        onClick={() => open("bench-hub")}
         className="inline-block text-[14px] text-muted hover:text-foreground transition-colors"
       >
         ← Back to bench
-      </Link>
+      </button>
     </div>
   );
 }

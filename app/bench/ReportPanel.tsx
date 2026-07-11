@@ -1,20 +1,14 @@
-// Page rapport d'un run — Brique Auto Report (getReport + exportReportMarkdown).
-// Le rapport est normalement déjà généré au moment où on arrive ici
-// (completeRunAction appelle generateReport avant de rediriger, best-effort) ;
-// s'il manque (ex. échec LLM à la complétion), on le régénère ici avant
-// d'abandonner en 404. On affiche ensuite le rapport section par section, avec
-// le design system Bench. Le markdown exporté reste disponible en repli
-// (copier-coller, archivage) sous un simple <details>/<pre> — pas de
-// dépendance markdown nouvelle.
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import { getReport, generateReport, exportReportMarkdown } from "@/lib/bench";
+"use client";
+
+// Panneau rapport de run — Brique Auto Report. Fetch au montage sur
+// /api/bench/report/[id] (le rapport est normalement déjà généré à la
+// complétion du run ; l'endpoint le régénère si absent). Affichage section
+// par section, avec le design system Bench ; le markdown exporté reste
+// disponible en repli sous un simple <details>/<pre>.
+import { useEffect, useState } from "react";
+import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { ReportCitation } from "@/lib/core";
-import { getBenchSession } from "@/lib/session";
-
-export const dynamic = "force-dynamic";
-
-type Params = Promise<{ runId: string }>;
+import type { StoredReport } from "@/lib/bench/auto-report";
 
 function when(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
@@ -66,15 +60,36 @@ function CitationsSection({ citations }: { citations: ReportCitation[] }) {
   );
 }
 
-export default async function ReportPage({ params }: { params: Params }) {
-  const { runId } = await params;
-  const { store } = getBenchSession();
+export default function ReportPanel({ runId }: { runId: string }) {
+  const { open } = useWindowsContext();
+  const [data, setData] = useState<{ report: StoredReport; markdown: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  let report = await getReport(store, runId);
-  if (!report) report = await generateReport(store, runId).catch(() => null);
-  if (!report) notFound();
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bench/report/${runId}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? `Error ${res.status}`);
+        }
+        return res.json() as Promise<{ report: StoredReport; markdown: string }>;
+      })
+      .then((body) => {
+        if (!cancelled) setData(body);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load report.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
 
-  const markdown = await exportReportMarkdown(store, runId);
+  if (error) return <div className="p-6 text-sm text-danger">{error}</div>;
+  if (!data) return <div className="p-6 text-sm text-muted">Loading…</div>;
+
+  const { report, markdown } = data;
   const c = report.content;
 
   return (
@@ -85,9 +100,9 @@ export default async function ReportPage({ params }: { params: Params }) {
             <p className="eyebrow mb-3">Report</p>
             <h1 className="text-3xl font-semibold tracking-tight">{report.protocolTitle}</h1>
           </div>
-          <Link href={`/bench/run/${runId}`} className="chip shrink-0 mt-1">
+          <button type="button" onClick={() => open("run", { runId })} className="chip shrink-0 mt-1">
             ← Back to run
-          </Link>
+          </button>
         </div>
         <p className="receipt mt-3">
           Generated {when(report.generatedAt)} · run {runId}

@@ -1,19 +1,19 @@
+// Lecture thin pour ProtocolsPanel — même logique que l'ancien
+// app/bench/protocols/page.tsx : amorçage du protocole de référence RT-qPCR
+// si la bibliothèque est vide, pour qu'elle ne le soit jamais.
 import { listProtocols, seedReferenceProtocol } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
-import ProtocolsClient from "./ProtocolsClient";
 
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-export default async function ProtocolsPage() {
+export async function GET() {
   const { store } = getBenchSession();
 
-  // Amorçage : sans protocole, on sème le protocole de référence RT-qPCR pour
-  // que la bibliothèque ne soit jamais vide.
   let protocols = await listProtocols(store, WS);
   if (protocols.length === 0) {
     await seedReferenceProtocol(store, WS);
     protocols = await listProtocols(store, WS);
   }
 
-  return <ProtocolsClient protocols={protocols} />;
+  return Response.json({ protocols });
 }

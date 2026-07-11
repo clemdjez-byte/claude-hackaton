@@ -6,9 +6,10 @@ import type { JSONContent } from "@tiptap/core";
 import { useDebouncedCallback } from "use-debounce";
 import { NoteEditor } from "@/app/components/NoteEditor";
 import { ProtocolStepNode, makeEmptyStep } from "@/app/components/protocol-step-node";
+import { useWindowsContext } from "@/app/shell/WindowsContext";
 import ScaleActivatePanel from "./ScaleActivatePanel";
 import type { Protocol, Recipe } from "@/lib/core/types";
-import { startRunAction, publishProtocolAction } from "../../actions";
+import { startRunAction, publishProtocolAction } from "./actions";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -23,7 +24,12 @@ export default function ProtocolDocEditor({
   protocol: Protocol;
   initialDoc: JSONContent;
 }) {
+  const { open } = useWindowsContext();
   const [title, setTitle] = useState(protocol.title || "");
+  // Statut local : Publish met à jour l'affichage tout de suite (plus de
+  // revalidatePath/re-render serveur pour le refléter, ce panneau fetch une
+  // seule fois au montage).
+  const [status, setStatus] = useState(protocol.status);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -121,7 +127,7 @@ export default function ProtocolDocEditor({
     ed.chain().insertContentAt(ed.state.doc.content.size, makeEmptyStep()).focus("end").run();
   }
 
-  const canPublish = protocol.status === "draft" && protocol.sources.length > 0;
+  const canPublish = status === "draft" && protocol.sources.length > 0;
 
   async function publish() {
     await flushSave();
@@ -131,7 +137,10 @@ export default function ProtocolDocEditor({
       return;
     }
     setError(null);
-    start(() => publishProtocolAction(protocol.id));
+    start(async () => {
+      await publishProtocolAction(protocol.id);
+      setStatus("published");
+    });
   }
   async function startRun() {
     await flushSave();
@@ -141,7 +150,10 @@ export default function ProtocolDocEditor({
       return;
     }
     setError(null);
-    start(() => startRunAction(protocol.id, nReactions, overagePct));
+    start(async () => {
+      const { runId } = await startRunAction(protocol.id, nReactions, overagePct);
+      open("run", { runId });
+    });
   }
 
   return (
@@ -167,9 +179,7 @@ export default function ProtocolDocEditor({
       {/* barre méta façon ELN */}
       <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-2/40 px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className={`pill ${protocol.status === "published" ? "accent" : ""}`}>
-            {protocol.status}
-          </span>
+          <span className={`pill ${status === "published" ? "accent" : ""}`}>{status}</span>
           <span className="receipt">v{protocol.version}</span>
           {protocol.sources.length > 0 && (
             <span className="receipt">· {protocol.sources.length} sources</span>

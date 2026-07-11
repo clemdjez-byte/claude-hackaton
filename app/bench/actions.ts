@@ -2,12 +2,11 @@
 
 // Server actions du Bench — partie « Protocol Studio ». Chaque action résout
 // le contexte de la brique (getBenchSession), appelle une fonction de brique
-// avec le store, puis revalide/redirige vers les chemins standalone. Les
-// nombres viennent du calcul déterministe, jamais du LLM. Les actions liées
-// aux runs (démarrage à part) arrivent avec la console de run (Task 4) ;
-// startRunAction est déjà là car la fiche protocole la consomme (bouton
-// « Activate at the bench »).
-import { redirect } from "next/navigation";
+// avec le store, puis revalide (actions consommées in-place par un panneau)
+// ou retourne l'id créé (le panneau ouvre alors la fenêtre suivante via
+// useWindowsContext().open — plus de redirect() : les surfaces sont des
+// panneaux montés, pas des routes). Les nombres viennent du calcul
+// déterministe, jamais du LLM.
 import { revalidatePath } from "next/cache";
 import {
   startRun,
@@ -42,11 +41,12 @@ function runPath(runId: string) {
 
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
 
-/** Crée un protocole depuis une description libre (brief) et ouvre sa fiche. */
-export async function generateProtocolAction(brief: string): Promise<void> {
+/** Crée un protocole depuis une description libre (brief). Le panneau ouvre
+ *  ensuite la fiche via open('protocol', {protocolId}). */
+export async function generateProtocolAction(brief: string): Promise<{ protocolId: string }> {
   const { store } = getBenchSession();
   const protocol = await generateProtocol(store, WS, brief);
-  redirect(protocolPath(protocol.id));
+  return { protocolId: protocol.id };
 }
 
 /** Adapte un protocole existant via une instruction en langage naturel
@@ -74,8 +74,13 @@ export async function sealDraftAction(protocolId: string): Promise<void> {
 }
 
 /** Fige une version depuis le brouillon puis démarre un run dessus (épingle
- *  la version FIGÉE, pas le brouillon mutable). */
-export async function startRunAction(protocolId: string, n: number, overage: number): Promise<void> {
+ *  la version FIGÉE, pas le brouillon mutable). Le panneau ouvre ensuite la
+ *  console via open('run', {runId}). */
+export async function startRunAction(
+  protocolId: string,
+  n: number,
+  overage: number
+): Promise<{ runId: string }> {
   const { store, ctx } = getBenchSession();
   const { version, protocol } = await sealDraft(store, protocolId);
   await indexProtocol(store, protocol);
@@ -85,7 +90,7 @@ export async function startRunAction(protocolId: string, n: number, overage: num
     protocolVersion: version, // épingle la version FIGÉE, pas le brouillon mutable
     params: { n_reactions: n, overage_pct: overage },
   });
-  redirect(`/bench/run/${runCtx.run.id}`);
+  return { runId: runCtx.run.id };
 }
 
 // ── Console de run (paillasse live) ───────────────────────────────────────
@@ -167,11 +172,12 @@ export async function deleteEvidenceAction(runId: string, evidenceId: string): P
 
 /** Termine le run, génère le rapport auditable (Brique Auto Report — repli
  *  hors-ligne déterministe si aucune clé LLM), indexe le tout dans la mémoire
- *  du lab (best-effort), puis ouvre la page rapport. La génération du rapport
- *  et l'indexation sont best-effort : avec une clé LLM, un appel qui échoue ne
- *  doit pas rendre le run orphelin (déjà completed, sans rapport, sans
- *  redirection). La page rapport régénère si besoin au chargement. */
-export async function completeRunAction(runId: string): Promise<void> {
+ *  du lab (best-effort), puis retourne l'id : le panneau ouvre ensuite le
+ *  rapport via open('report', {runId}). La génération du rapport et
+ *  l'indexation sont best-effort : avec une clé LLM, un appel qui échoue ne
+ *  doit pas rendre le run orphelin (déjà completed, sans rapport). Le
+ *  panneau rapport régénère si besoin au chargement. */
+export async function completeRunAction(runId: string): Promise<{ runId: string }> {
   const { store } = getBenchSession();
   // Capturé avant complétion : titre du protocole + étapes, pour l'indexation du run.
   const ctx = await getRunContext(store, runId);
@@ -182,7 +188,7 @@ export async function completeRunAction(runId: string): Promise<void> {
     const markdown = await exportReportMarkdown(store, runId);
     await indexReport(store, report, markdown);
   } catch {
-    // best-effort — la page rapport régénère au chargement si absent
+    // best-effort — le panneau rapport régénère au chargement si absent
   }
-  redirect(`/bench/report/${runId}`);
+  return { runId };
 }
