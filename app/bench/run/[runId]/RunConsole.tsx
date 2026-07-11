@@ -16,9 +16,7 @@ import {
   deleteEvidenceAction,
   completeRunAction,
 } from "../../actions";
-import { useVoice } from "../../useVoice";
-import { takeSentences } from "../../sentences";
-import type { VoiceLang } from "@/lib/bench";
+import { useVoiceRoom, type ClientEvent, type VoiceRoomStatus } from "./useVoiceRoom";
 
 type ActiveTimer = { id: number; label: string; remaining: number; running: boolean };
 type CaptureMode = "note" | "measurement" | "deviation" | "photo" | "data";
@@ -27,9 +25,17 @@ type CaptureMode = "note" | "measurement" | "deviation" | "photo" | "data";
 // labo) → on stocke ce marqueur et on le masque à l'affichage.
 const DIMENSIONLESS = "—";
 
-// Le sélecteur expose "fr"/"en" ; Web Speech attend des tags BCP-47.
-const LANG_TAGS: Record<VoiceLang, string> = { fr: "fr-FR", en: "en-US" };
-const VOICE_LANG_KEY = "bench.voice.lang";
+const VOICE_STATUS_LABEL: Record<VoiceRoomStatus, string> = {
+  off: "off",
+  connecting: "connecting…",
+  waiting_agent: "waiting for agent…",
+  initializing: "starting…",
+  idle: "ready",
+  listening: "listening…",
+  thinking: "thinking…",
+  speaking: "speaking…",
+  error: "error",
+};
 
 // Mutation d'étape appliquée INSTANTANÉMENT à l'écran (optimistic), le serveur
 // suit en arrière-plan. Miroir EXACT de advanceStep/skipStep/stepBack (côté
@@ -170,74 +176,11 @@ export default function RunConsole({
   const completeAtLast = currentIdx === null && displayedIdx === lastIdx;
   const canPrev = live && (currentIdx === null ? steps.length > 0 : currentIdx > 0);
 
-  // ── Copilote vocal (Web Speech côté navigateur + Claude côté serveur) ──
+  // ── Copilote vocal (LiveKit : conversation continue, barge-in) ──
   const router = useRouter();
-  const [reply, setReply] = useState("");
-  const [voiceBusy, setVoiceBusy] = useState(false);
   const [timers, setTimers] = useState<ActiveTimer[]>([]);
   const timerSeq = useRef(0);
   const timersRef = useRef<ActiveTimer[]>([]);
-  const onTranscriptRef = useRef<(t: string) => void>(() => {});
-  const [voiceLang, setVoiceLang] = useState<VoiceLang>("fr");
-  const voice = useVoice({
-    lang: LANG_TAGS[voiceLang],
-    onTranscript: (t) => onTranscriptRef.current(t),
-  });
-  // Restaure le choix de langue au montage (évite le mismatch SSR).
-  useEffect(() => {
-    const saved = localStorage.getItem(VOICE_LANG_KEY);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (saved === "en" || saved === "fr") setVoiceLang(saved);
-  }, []);
-  function changeVoiceLang(l: VoiceLang) {
-    setVoiceLang(l);
-    try {
-      localStorage.setItem(VOICE_LANG_KEY, l);
-    } catch {
-      /* noop */
-    }
-  }
-
-  // Earcon : bip discret « bien reçu » joué dès qu'une phrase est captée, pour un
-  // retour immédiat pendant que Claude réfléchit. Web Audio natif, pas de fichier.
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  function playEarcon() {
-    try {
-      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctx) return;
-      const ac = (audioCtxRef.current ??= new Ctx());
-      if (ac.state === "suspended") void ac.resume();
-      const now = ac.currentTime;
-      const osc = ac.createOscillator();
-      const gain = ac.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(660, now);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-      osc.connect(gain).connect(ac.destination);
-      osc.start(now);
-      osc.stop(now + 0.15);
-    } catch {
-      /* audio indisponible : silencieux */
-    }
-  }
-
-  const NET_ERROR = voiceLang === "en" ? "Network issue, please repeat." : "Problème réseau, répète.";
-
-  // Ambient mode : écoute CONTINUE (parler à tout moment pendant la manip) au lieu
-  // du push-to-talk. useVoice écoute déjà en continu tant qu'on ne l'arrête pas ;
-  // l'anti-écho (pause du micro pendant que le copilote parle) est géré dans le hook.
-  const [ambient, setAmbient] = useState(false);
-  function toggleAmbient() {
-    if (ambient) {
-      voice.stopListening();
-      setAmbient(false);
-    } else {
-      voice.startListening();
-      setAmbient(true);
-    }
-  }
 
   function addTimer(label: string, seconds: number) {
     timerSeq.current += 1;
@@ -247,101 +190,37 @@ export default function RunConsole({
     ]);
   }
 
-  const handleTranscript = async (text: string) => {
-    if (voiceBusy) return;
-    setVoiceBusy(true);
-    playEarcon();
-    setReply("");
-    let buffer = ""; // texte accumulé non encore découpé en phrases
-    let didAct = false;
-    const speakSentences = () => {
-      const { sentences, rest } = takeSentences(buffer);
-      buffer = rest;
-      for (const s of sentences) voice.speakChunk(s);
-    };
-    try {
-      const res = await fetch("/api/bench/voice", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId: run.id, transcript: text, lang: voiceLang }),
-      });
-      if (!res.ok || !res.body) throw new Error(`status ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let line = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        line += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = line.indexOf("\n")) >= 0) {
-          const raw = line.slice(0, nl).trim();
-          line = line.slice(nl + 1);
-          if (!raw) continue;
-          let ev: Record<string, unknown>;
-          try {
-            ev = JSON.parse(raw);
-          } catch {
-            continue;
-          }
-          switch (ev.type) {
-            case "reply_chunk": {
-              const delta = String(ev.delta ?? "");
-              buffer += delta;
-              setReply((r) => r + delta);
-              speakSentences();
-              break;
-            }
-            case "timer":
-              addTimer(String(ev.label ?? "timer"), Number(ev.seconds ?? 0));
-              break;
-            case "capture_photo":
-              setMode("photo");
-              setCameraOn(true);
-              setVoicePhotoPending(true);
-              break;
-            case "close_camera":
-              setCameraOn(false);
-              setVoicePhotoPending(false);
-              break;
-            case "did_act":
-              didAct = true;
-              break;
-            case "error":
-              setReply((r) => (r ? r + " " : "") + NET_ERROR);
-              voice.speakChunk(NET_ERROR);
-              break;
-          }
-        }
+  // Les ordres de l'agent (mêmes effets que l'ancien flux NDJSON).
+  const voiceRoom = useVoiceRoom({
+    runId: run.id,
+    onEvent: (ev: ClientEvent) => {
+      switch (ev.type) {
+        case "timer":
+          addTimer(ev.label, ev.seconds);
+          break;
+        case "capture_photo":
+          setMode("photo");
+          setCameraOn(true);
+          setVoicePhotoPending(true);
+          break;
+        case "close_camera":
+          setCameraOn(false);
+          setVoicePhotoPending(false);
+          break;
+        case "did_act":
+          router.refresh();
+          break;
       }
-      // Flush : lire la dernière phrase (sans ponctuation de fin), fin du tour.
-      const tail = buffer.trim();
-      if (tail) voice.speakChunk(tail);
-      voice.speakDone();
-      if (didAct) router.refresh();
-    } catch {
-      setReply(NET_ERROR);
-      voice.speakChunk(NET_ERROR);
-      voice.speakDone();
-    } finally {
-      setVoiceBusy(false);
-    }
-  };
+    },
+  });
 
   useEffect(() => {
-    onTranscriptRef.current = handleTranscript;
     timersRef.current = timers;
   });
 
   useEffect(() => {
     if (timers.length === 0) return;
     const iv = setInterval(() => {
-      const expiring = timersRef.current.filter((t) => t.running && t.remaining === 1);
-      for (const t of expiring)
-        voice.speak(
-          voiceLang === "en" ? `Timer done: ${t.label}` : `Timer terminé : ${t.label}`
-        );
       setTimers((ts) =>
         ts.map((t) => {
           if (!t.running || t.remaining === 0) return t;
@@ -351,7 +230,6 @@ export default function RunConsole({
       );
     }, 1000);
     return () => clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timers.length]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -696,91 +574,52 @@ export default function RunConsole({
 
         {/* ── Colonne 3 : outils (voix + capture + observations) ── */}
         <div className="lg:col-span-3 min-w-0 flex flex-col min-h-0 gap-3">
-          {/* Voice copilot */}
+          {/* Voice copilot — conversation continue LiveKit (barge-in : parler
+              pendant qu'il parle l'interrompt ; le micro reste ouvert). */}
           {live && (
             <section className="card p-4 space-y-2.5 shrink-0">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold tracking-tight">Voice copilot</h2>
-                  <div className="flex items-center gap-1">
-                    {(["fr", "en"] as const).map((l) => (
-                      <button
-                        key={l}
-                        type="button"
-                        onClick={() => changeVoiceLang(l)}
-                        className={`tab-pill ${voiceLang === l ? "active" : ""}`}
-                      >
-                        {l.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <span className="receipt">
-                  {voice.isSpeaking
-                    ? "speaking…"
-                    : voiceBusy
-                      ? "thinking…"
-                      : voice.isListening
-                        ? ambient
-                          ? "ambient · listening"
-                          : "listening…"
-                        : "hold to talk"}
-                </span>
+                <h2 className="text-sm font-semibold tracking-tight">Voice copilot</h2>
+                <span className="receipt">{VOICE_STATUS_LABEL[voiceRoom.status]}</span>
               </div>
 
-              {voice.isSupported ? (
+              {voiceRoom.status === "off" || voiceRoom.status === "error" ? (
                 <>
-                  {/* Bouton principal : maintenir pour parler (push-to-talk), OU quitter
-                      l'ambient quand il est actif. */}
-                  {ambient ? (
-                    <button
-                      type="button"
-                      onClick={toggleAmbient}
-                      className="btn-accent w-full select-none"
-                      style={{ background: "var(--danger)" }}
-                    >
-                      Leave ambient mode
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onPointerDown={() => voice.startListening()}
-                      onPointerUp={() => voice.stopListening()}
-                      onPointerLeave={() => voice.stopListening()}
-                      className={`btn-accent w-full select-none ${voice.isListening ? "opacity-90" : ""}`}
-                    >
-                      {voice.isListening ? "Release to send" : "Hold to talk"}
-                    </button>
-                  )}
-                  {/* Bascule ambient : ALLUMÉE (tint accent + pastille verte) quand actif. */}
                   <button
                     type="button"
-                    onClick={toggleAmbient}
-                    className="chip w-full justify-center"
-                    style={
-                      ambient
-                        ? {
-                            background: "var(--accent-soft)",
-                            borderColor: "var(--accent)",
-                            color: "var(--accent)",
-                          }
-                        : undefined
-                    }
+                    onClick={() => void voiceRoom.connect()}
+                    className="btn-accent w-full select-none"
                   >
-                    <span className={`status-dot ${ambient ? "active" : "idle"}`} aria-hidden /> Ambient
-                    mode: talk anytime
+                    Start conversation
                   </button>
-                  {voice.interim && <p className="text-sm text-muted italic">{voice.interim}</p>}
-                  {reply && (
-                    <div className="rounded-[10px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] px-3 py-2 text-[13px] max-h-24 overflow-y-auto">
-                      {reply}
+                  {voiceRoom.error && <p className="text-[13px] text-danger">{voiceRoom.error}</p>}
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={voiceRoom.toggleMute} className="chip flex-1 justify-center">
+                      {voiceRoom.muted ? "Unmute" : "Mute"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={voiceRoom.disconnect}
+                      className="chip flex-1 justify-center"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      End
+                    </button>
+                  </div>
+                  {voiceRoom.transcript.length > 0 && (
+                    <div className="rounded-[10px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] px-3 py-2 text-[13px] max-h-32 overflow-y-auto space-y-1">
+                      {voiceRoom.transcript.map((l) => (
+                        <p key={l.id} className={l.from === "you" ? "text-muted" : undefined}>
+                          <span className="font-medium">{l.from === "you" ? "You" : "Copilot"} · </span>
+                          {l.text}
+                        </p>
+                      ))}
                     </div>
                   )}
                 </>
-              ) : (
-                <p className="text-sm text-muted">
-                  {voiceLang === "en" ? "Voice needs Chrome or Edge." : "La voix nécessite Chrome ou Edge."}
-                </p>
               )}
             </section>
           )}
