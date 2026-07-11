@@ -8,6 +8,8 @@
 // runtime Next de Sylvy (qui n'importe QUE adapters.sylvy.ts), sinon better-sqlite3
 // finit dans le bundle serverless (plan §9.3). L'invariant CI du plan §11 le vérifie.
 
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import type {
   Evidence,
@@ -513,6 +515,10 @@ export function createDb(path = ":memory:"): Db {
 // Singleton applicatif standalone (les tests utilisent createDb(':memory:')).
 let _db: Db | null = null;
 export function getDb(): Db {
-  if (!_db) _db = createDb(process.env.OCTOPUS_DB_PATH || "octopus.db");
+  if (!_db) {
+    const path = process.env.OCTOPUS_DB_PATH || "data/octopus.db";
+    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+    _db = createDb(path);
+  }
   return _db;
 }
