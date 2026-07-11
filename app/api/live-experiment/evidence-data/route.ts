@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     const fichier = await store.insertFichier({
       ws: WS,
       storageKey: safeName(file.name),
-      mime: file.type || mime,
+      mime: mime,
       sha256,
       bytes: buffer,
     });

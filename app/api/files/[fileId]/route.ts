@@ -24,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Params }) {
     headers: {
       "Content-Type": fichier.mime,
       "Content-Disposition": `inline; filename="${filename}"`,
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
