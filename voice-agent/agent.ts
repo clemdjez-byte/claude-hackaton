@@ -14,8 +14,8 @@ import {
   defineAgent,
 } from "@livekit/agents";
 import * as anthropic from "@livekit/agents-plugin-anthropic";
-import * as cartesia from "@livekit/agents-plugin-cartesia";
 import * as deepgram from "@livekit/agents-plugin-deepgram";
+import * as elevenlabs from "@livekit/agents-plugin-elevenlabs";
 import * as silero from "@livekit/agents-plugin-silero";
 import { buildSystemPrompt, getRunContext } from "@/lib/bench";
 import { OPERATOR, WS, getBenchSession } from "@/lib/session";
@@ -27,7 +27,7 @@ const VOICE_MODEL = "claude-haiku-4-5-20251001";
 
 // Fail-fast : sans ces clés le pipeline est muet/sourd — on refuse de démarrer
 // avec un message actionnable plutôt que d'échouer en pleine conversation.
-for (const key of ["ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "CARTESIA_API_KEY"]) {
+for (const key of ["ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "ELEVEN_API_KEY"]) {
   if (!process.env[key]) {
     console.error(`[voice-agent] ${key} manquante — renseigne-la dans .env.local (voir .env.example).`);
     process.exit(1);
@@ -91,10 +91,11 @@ export default defineAgent({
       // nova-3 multilingue : gère le français, l'anglais et le code-switching.
       stt: new deepgram.STT({ model: "nova-3", language: "multi" }),
       llm: new anthropic.LLM({ model: VOICE_MODEL }),
-      tts: new cartesia.TTS({
-        model: "sonic-3",
+      // flash_v2_5 : le modèle ElevenLabs le plus rapide, multilingue (fr/en).
+      tts: new elevenlabs.TTS({
+        model: "eleven_flash_v2_5",
         language: "fr",
-        ...(process.env.CARTESIA_VOICE_ID ? { voice: process.env.CARTESIA_VOICE_ID } : {}),
+        ...(process.env.ELEVEN_VOICE_ID ? { voiceId: process.env.ELEVEN_VOICE_ID } : {}),
       }),
       // VAD pur : 100 % local (le détecteur sémantique passe par LiveKit Cloud).
       turnDetection: "vad",

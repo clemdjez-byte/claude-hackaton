@@ -53,10 +53,10 @@ running locally:
 
 - **STT** — Deepgram `nova-3` multilingual streaming ([free tier](https://console.deepgram.com))
 - **Brain** — Claude Haiku with the same 10 run-control tools as the UI
-- **TTS** — Cartesia `sonic-3` ([free tier](https://play.cartesia.ai), set
-  `CARTESIA_VOICE_ID` to pick a voice)
+- **TTS** — ElevenLabs `eleven_flash_v2_5` ([free tier](https://elevenlabs.io), set
+  `ELEVEN_VOICE_ID` to pick a voice)
 
-Setup: `brew install livekit`, put `DEEPGRAM_API_KEY` and `CARTESIA_API_KEY` in
+Setup: `brew install livekit`, put `DEEPGRAM_API_KEY` and `ELEVEN_API_KEY` in
 `.env.local`, then run `npm run voice` alongside `npm run dev`. Everything runs
 on your machine (local LiveKit server in dev mode); only STT/TTS/LLM API calls
 leave it. Without these keys, the run console works fine — just without voice.
