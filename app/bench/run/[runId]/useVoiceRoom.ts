@@ -51,6 +51,9 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
   }, []);
 
   const connect = useCallback(async () => {
+    // Garde de réentrance : connexion déjà en cours ou room déjà active → no-op
+    // (couvre le double-clic sur Start et l'appel alors qu'on est connecté).
+    if (roomRef.current) return;
     setError(null);
     setTranscript([]);
     setStatus("connecting");
@@ -139,6 +142,13 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
       setStatus("error");
       void room.disconnect();
       roomRef.current = null;
+      return;
+    }
+
+    // disconnect() a pu être appelé pendant les await ci-dessus : cette room
+    // est alors orpheline — on la raccroche sans toucher à l'état courant.
+    if (roomRef.current !== room) {
+      void room.disconnect();
       return;
     }
 
