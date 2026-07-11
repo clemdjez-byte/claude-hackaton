@@ -180,7 +180,6 @@ export default function RunConsole({
   const router = useRouter();
   const [timers, setTimers] = useState<ActiveTimer[]>([]);
   const timerSeq = useRef(0);
-  const timersRef = useRef<ActiveTimer[]>([]);
 
   function addTimer(label: string, seconds: number) {
     timerSeq.current += 1;
@@ -212,10 +211,6 @@ export default function RunConsole({
           break;
       }
     },
-  });
-
-  useEffect(() => {
-    timersRef.current = timers;
   });
 
   useEffect(() => {

@@ -115,7 +115,11 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
     room.registerTextStreamHandler("lk.transcription", async (reader, participantInfo) => {
       const from: TranscriptLine["from"] =
         participantInfo.identity === room.localParticipant.identity ? "you" : "agent";
-      const id = reader.info.id;
+      // Une mise à jour STT interim ré-émet un NOUVEAU stream (nouvel
+      // info.id) mais garde le même lk.segment_id : clé par segment_id pour
+      // remplacer la ligne précédente au lieu de l'empiler. Côté agent, un
+      // segment = un seul stream (deltas via text += chunk, inchangé).
+      const id = reader.info.attributes?.["lk.segment_id"] ?? reader.info.id;
       let text = "";
       for await (const chunk of reader) {
         text += chunk;

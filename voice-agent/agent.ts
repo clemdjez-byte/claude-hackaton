@@ -39,7 +39,11 @@ export default defineAgent({
     proc.userData.vad = await silero.VAD.load();
   },
   entry: async (ctx: JobContext) => {
-    const roomName = ctx.room.name ?? "";
+    // ctx.room n'est PAS encore connecté à l'entrée de entry() : .name y est
+    // toujours vide. Le nom de room est déjà connu via l'attribution du job
+    // (proto.Job.room), disponible avant connexion — cf. @livekit/protocol
+    // Job.room?: Room, Room.name: string.
+    const roomName = ctx.job.room?.name ?? "";
     if (!roomName.startsWith(ROOM_PREFIX)) return; // pas une room du Bench
     const runId = roomName.slice(ROOM_PREFIX.length);
 
