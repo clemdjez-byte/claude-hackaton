@@ -79,14 +79,16 @@ Navigateur (RunConsole)                    Agent vocal (voice-agent/, Node)
 ### 1. `voice-agent/agent.ts` — l'agent
 
 - Session `@livekit/agents` : `vad: silero`, `stt: Deepgram` (modèle multilingue
-  nova-3, détection de langue auto FR/EN), `tts: Cartesia`, `turnDetection` du
-  framework (modèle multilingue).
+  nova-3, détection de langue auto FR/EN), `tts: Cartesia`, turn detection **VAD
+  local** (*amendement 2026-07-12* : le détecteur sémantique `inference.TurnDetector`
+  passe par la gateway LiveKit Cloud — hors périmètre 100 % local ; le barge-in
+  reste fourni par le VAD).
 - **LLM = Claude Haiku 4.5** (`claude-haiku-4-5-20251001`, comme aujourd'hui — choisi
-  pour la latence) via le plugin OpenAI de LiveKit pointé sur la **couche de
-  compatibilité OpenAI d'Anthropic** (`baseURL: https://api.anthropic.com/v1/`,
-  clé `ANTHROPIC_API_KEY`). **Plan B** si les tool-calls passent mal par cette couche :
-  petit adaptateur LLM maison (~100 lignes) implémentant l'interface LLM de
-  `@livekit/agents` au-dessus du SDK Anthropic. Rien d'autre ne change.
+  pour la latence). *Amendement 2026-07-12 (recherche d'implémentation)* : le plugin
+  **`@livekit/agents-plugin-anthropic` existe désormais en Node.js** (v1.5.1) — on
+  l'utilise directement avec `ANTHROPIC_API_KEY`, plus besoin de la couche de
+  compatibilité OpenAI envisagée au design. Plans B inchangés dans l'ordre : couche
+  compat OpenAI d'Anthropic, puis adaptateur LLM maison (~100 lignes).
 - **Instructions** : `buildSystemPrompt(runContext)` importé de
   `lib/bench/voice-copilot` — même prompt qu'aujourd'hui. Rafraîchi via
   `session.updateInstructions()` après chaque outil qui modifie l'état du run
