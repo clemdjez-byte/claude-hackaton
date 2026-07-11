@@ -38,6 +38,9 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
   const [muted, setMuted] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const roomRef = useRef<Room | null>(null);
+  // Verrou synchrone posé AVANT le premier await de connect() : ferme la
+  // fenêtre de double-clic pendant le fetch du token (roomRef encore null).
+  const connectingRef = useRef(false);
   const onEventRef = useRef(opts.onEvent);
   useEffect(() => {
     onEventRef.current = opts.onEvent;
@@ -53,7 +56,8 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
   const connect = useCallback(async () => {
     // Garde de réentrance : connexion déjà en cours ou room déjà active → no-op
     // (couvre le double-clic sur Start et l'appel alors qu'on est connecté).
-    if (roomRef.current) return;
+    if (connectingRef.current || roomRef.current) return;
+    connectingRef.current = true;
     setError(null);
     setTranscript([]);
     setStatus("connecting");
@@ -68,6 +72,7 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
       if (!res.ok) throw new Error(String(res.status));
       grant = await res.json();
     } catch {
+      connectingRef.current = false;
       setError("Impossible d'obtenir l'accès voix (serveur Next).");
       setStatus("error");
       return;
@@ -137,13 +142,21 @@ export function useVoiceRoom(opts: { runId: string; onEvent: (ev: ClientEvent) =
       await room.connect(grant.url, grant.token);
       await room.localParticipant.setMicrophoneEnabled(true);
       await room.startAudio(); // appelé depuis le clic Start → autoplay OK
-    } catch {
+    } catch (e) {
+      console.warn("[voice] connexion échouée:", e);
+      connectingRef.current = false;
+      // On raccroche toujours la room qui a échoué, mais on ne touche à
+      // error/status/roomRef que si c'est encore la room courante (disconnect()
+      // a pu être appelé pendant les await : ne pas clobber l'état).
+      void room.disconnect();
+      if (roomRef.current !== room) return;
       setError(`Connexion voix impossible. ${HINT}`);
       setStatus("error");
-      void room.disconnect();
       roomRef.current = null;
       return;
     }
+
+    connectingRef.current = false;
 
     // disconnect() a pu être appelé pendant les await ci-dessus : cette room
     // est alors orpheline — on la raccroche sans toucher à l'état courant.
