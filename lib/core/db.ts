@@ -3,10 +3,11 @@
 // les briques testables et portables. L'INTERFACE vit ici ; les implémentations
 // vivent dans les adaptateurs, jamais dans le cœur :
 //   - ./sqlite.ts               → SQLite (better-sqlite3) : tests + repo open-source
-//   - ../adapters.sylvy.ts      → Supabase/Postgres (RLS + service-role)
+//   - (adaptateur hébergé)      → Postgres (RLS + service-role), même interface
 // Aucune dépendance de driver ici → le cœur ne tire JAMAIS `better-sqlite3` dans
-// le bundle serverless de Sylvy (cf. plan §9.3). L'interface est asynchrone exprès
-// (SQLite est synchrone, Postgres non ; les briques `await`, le swap est invisible).
+// un bundle serverless qui utiliserait un autre adaptateur. L'interface est
+// asynchrone exprès (SQLite est synchrone, Postgres non ; les briques `await`,
+// le swap est invisible).
 
 import { randomBytes } from "node:crypto";
 import type {

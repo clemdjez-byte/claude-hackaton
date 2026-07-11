@@ -115,7 +115,7 @@ export function WebcamCapture({
 
   if (status === "unsupported" || status === "denied" || status === "error") {
     return (
-      <div className="rounded-[10px] border border-[var(--sy-border,#E5E2D8)] bg-[var(--sy-paper-2,#F0EDE3)] px-3 py-3 text-[13px] text-muted space-y-1">
+      <div className="rounded-[10px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] px-3 py-3 text-[13px] text-muted space-y-1">
         <p className="font-medium text-foreground">
           {status === "denied" ? "Camera access blocked" : "Camera unavailable"}
         </p>
@@ -132,7 +132,7 @@ export function WebcamCapture({
 
   return (
     <div className="space-y-2">
-      <div className="relative rounded-[10px] overflow-hidden border border-[var(--sy-border,#E5E2D8)] bg-black aspect-[4/3]">
+      <div className="relative rounded-[10px] overflow-hidden border border-[var(--oct-border,#E5E2D8)] bg-black aspect-[4/3]">
         <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
         {status === "starting" && (
           <div className="absolute inset-0 flex items-center justify-center text-[13px] text-white/80">

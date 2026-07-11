@@ -82,7 +82,7 @@ function StepMarker({ status }: { status: Step["status"] }) {
 }
 
 const INPUT =
-  "border border-[var(--sy-border,#E5E2D8)] rounded-[10px] px-3 py-2.5 text-sm bg-[var(--sy-paper,#fff)] focus:border-accent focus:outline-none";
+  "border border-[var(--oct-border,#E5E2D8)] rounded-[10px] px-3 py-2.5 text-sm bg-[var(--oct-paper,#fff)] focus:border-accent focus:outline-none";
 
 // Console PLEIN ÉCRAN (full-bleed via MainFrame), 3 colonnes qui remplissent la
 // largeur : étapes | ÉTAPE EN COURS (large, la section de travail) | outils.
@@ -410,7 +410,7 @@ export default function RunConsole({
       {/* Overlay de clôture : le run se termine (quelques secondes) puis on
           retourne au tableau de bord Bench. */}
       {finishing && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--sy-paper,#FAF9F4)]/85 backdrop-blur-sm text-center px-6">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-[var(--oct-paper,#FAF9F4)]/85 backdrop-blur-sm text-center px-6">
           <span className="status-dot active" aria-hidden />
           <div>
             <p className="text-lg font-semibold tracking-tight">Finishing your run</p>
@@ -467,7 +467,7 @@ export default function RunConsole({
                     setManualIndex(s.protocolStepIndex === currentIdx ? null : s.protocolStepIndex)
                   }
                   className={`flex items-start gap-3 rounded-[10px] px-3 py-2 cursor-pointer border transition-colors ${
-                    isCurrent ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--sy-paper-2,#F0EDE3)]"
+                    isCurrent ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--oct-paper-2,#F0EDE3)]"
                   } ${
                     isSelected
                       ? isCurrent
@@ -527,7 +527,7 @@ export default function RunConsole({
                   </div>
 
                   {(displayedProto.temperature || displayedProto.durationSec || displayedParams.length > 0) && (
-                    <div className="rounded-[12px] border border-[var(--sy-border,#E5E2D8)] bg-[var(--sy-paper-2,#F0EDE3)] p-4 space-y-3">
+                    <div className="rounded-[12px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] p-4 space-y-3">
                       {(displayedProto.temperature || displayedProto.durationSec) && (
                         <div className="flex items-center gap-5 flex-wrap">
                           {displayedProto.temperature && (
@@ -551,7 +551,7 @@ export default function RunConsole({
                       {displayedParams.length > 0 && (
                         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 pt-1">
                           {displayedParams.map(([k, q]) => (
-                            <div key={k} className="flex items-baseline justify-between gap-3 text-sm border-b border-[var(--sy-border,#E5E2D8)]/60 py-1">
+                            <div key={k} className="flex items-baseline justify-between gap-3 text-sm border-b border-[var(--oct-border,#E5E2D8)]/60 py-1">
                               <span className="text-muted min-w-0 truncate">{k}</span>
                               <span className="font-medium tabular-nums shrink-0">
                                 {q.value} {q.unit}
@@ -616,7 +616,7 @@ export default function RunConsole({
               </div>
 
               {/* Footer épinglé : actions (selon qu'on regarde l'étape en cours) */}
-              <div className="shrink-0 pt-4 mt-1 border-t border-[var(--sy-border,#E5E2D8)] space-y-3">
+              <div className="shrink-0 pt-4 mt-1 border-t border-[var(--oct-border,#E5E2D8)] space-y-3">
                 {/* Étape EN COURS : Prev (annule un Done) + Done + Skip + timer */}
                 {live && viewingCurrent && currentStep && (
                   <div className="flex items-center gap-2 flex-wrap">
@@ -772,7 +772,7 @@ export default function RunConsole({
                   </button>
                   {voice.interim && <p className="text-sm text-muted italic">{voice.interim}</p>}
                   {reply && (
-                    <div className="rounded-[10px] border border-[var(--sy-border,#E5E2D8)] bg-[var(--sy-paper-2,#F0EDE3)] px-3 py-2 text-[13px] max-h-24 overflow-y-auto">
+                    <div className="rounded-[10px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] px-3 py-2 text-[13px] max-h-24 overflow-y-auto">
                       {reply}
                     </div>
                   )}
@@ -1021,7 +1021,7 @@ export default function RunConsole({
                             <img
                               src={attachmentUrls[e.id]}
                               alt={e.body ?? "Run photo"}
-                              className="h-14 w-14 object-cover rounded-[8px] border border-[var(--sy-border,#E5E2D8)] shrink-0"
+                              className="h-14 w-14 object-cover rounded-[8px] border border-[var(--oct-border,#E5E2D8)] shrink-0"
                             />
                             {e.body && <span className="min-w-0">{e.body}</span>}
                           </span>

@@ -48,12 +48,12 @@ describe("Lab Memory", () => {
       sourceType: "report",
       sourceId: "rp_1",
       text: "synthese du run qPCR",
-      meta: { auteur: "Sophie" },
+      meta: { author: "operator" },
     });
     expect(entry.id).toMatch(/^mem_/);
     expect(entry.sourceType).toBe("report");
     expect(entry.sourceId).toBe("rp_1");
-    expect(entry.meta).toEqual({ auteur: "Sophie" });
+    expect(entry.meta).toEqual({ author: "operator" });
     d.close();
   });
 

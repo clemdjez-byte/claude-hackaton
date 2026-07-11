@@ -20,7 +20,7 @@ export async function PATCH(
     return new Response("Protocol not found", { status: 404 });
   }
 
-  // Validation minimale (calquée sur la route /pages/[pageId] de Sylvy).
+  // Validation minimale.
   if (body.title !== undefined && (typeof body.title !== "string" || body.title.length > 200)) {
     return new Response("Invalid title", { status: 400 });
   }

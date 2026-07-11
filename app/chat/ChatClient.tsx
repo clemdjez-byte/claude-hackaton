@@ -1,8 +1,8 @@
 "use client";
-// Chat "Ask your lab" — composant NEUF, volontairement minimal (pas le chat
-// Sylvy complet) : pas de useChat, pas de persistance de fil, un lecteur
-// NDJSON maison (même découpe que RunConsole côté voix). L'historique vit en
-// mémoire côté client et voyage dans chaque requête (YAGNI démo).
+// Chat "Ask your lab" — composant volontairement minimal : pas de useChat,
+// pas de persistance de fil, un lecteur NDJSON maison (même découpe que
+// RunConsole côté voix). L'historique vit en mémoire côté client et voyage
+// dans chaque requête (YAGNI démo).
 import Link from "next/link";
 import { useRef, useState } from "react";
 

@@ -1,9 +1,9 @@
 // lib/retrieval/embed.ts — embedder LOCAL, déterministe, ZÉRO dépendance externe
 // (hashing bag-of-words normalisé). Suffisant pour la recherche de démo ;
-// swappable derrière la même fonction vers un vrai modèle (Voyage / OpenAI
-// text-embedding-3-small) pour Sylvy. Le serveur MCP en garde une copie —
-// garder les deux en phase (même dimension, même hashing) pour que les
-// vecteurs stockés soient comparables.
+// swappable derrière la même fonction vers un vrai modèle d'embeddings (Voyage /
+// OpenAI text-embedding-3-small) si besoin. Le serveur MCP (octopus-mcp/) en
+// garde une copie — garder les deux en phase (même dimension, même hashing)
+// pour que les vecteurs stockés soient comparables.
 export const EMBED_DIM = 256;
 
 export function embed(text: string): number[] {

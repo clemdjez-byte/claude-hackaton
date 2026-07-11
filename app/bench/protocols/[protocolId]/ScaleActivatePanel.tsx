@@ -128,7 +128,7 @@ export default function ScaleActivatePanel({
                         className={`rounded-full px-2.5 py-1 text-[11px] ${
                           c.perWell ? "bg-brick-soft text-danger" : "bg-accent-soft text-accent"
                         }`}
-                        style={c.perWell ? { background: "var(--sy-brick-soft)" } : undefined}
+                        style={c.perWell ? { background: "var(--oct-brick-soft)" } : undefined}
                       >
                         {c.perWell ? "per tube" : "shared"}
                       </button>

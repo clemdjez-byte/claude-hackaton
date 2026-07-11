@@ -181,7 +181,7 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
                 ? "e.g. scale to 24 samples, keep only the RT-qPCR part…"
                 : "e.g. RT-qPCR SYBR Green two-step for 24 samples, 20 µL reactions"
             }
-            className="w-full border border-[var(--sy-border,#E5E2D8)] rounded-[10px] px-3 py-2 text-sm bg-[var(--sy-paper,#fff)] focus:border-accent focus:outline-none disabled:opacity-60"
+            className="w-full border border-[var(--oct-border,#E5E2D8)] rounded-[10px] px-3 py-2 text-sm bg-[var(--oct-paper,#fff)] focus:border-accent focus:outline-none disabled:opacity-60"
           />
           <div className="flex justify-end">
             <button

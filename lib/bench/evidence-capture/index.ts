@@ -100,7 +100,7 @@ export async function capturePhoto(
 
 // ── Photo par référence (stockage externe, pas de table fichier) ──────────
 /** Variante de `capturePhoto` pour les hôtes dont le binaire vit AILLEURS
- *  (ex. Sylvy : bucket de stockage, `insertFichier` dormant). La preuve `photo`
+ *  (ex. bucket de stockage externe, `insertFichier` dormant). La preuve `photo`
  *  référence la clé de stockage via `source` — le cœur ne voit jamais le bucket. */
 export async function capturePhotoRef(
   db: Db,

@@ -6,10 +6,10 @@ piece of evidence (notes, photos, measurements, deviations), and reconstructs a
 **planned / actually done / observed / interpreted** report where every claim cites its
 source — then feeds it all into a semantic **lab memory** you can query in plain language.
 
-Built for the hackathon **Built with Claude: Life Sciences** (Builder Track). New work,
-open source (MIT), [extracted from Sylvy](#extracted-from-sylvy) with the same seams
-(injected `db`, fail-closed feature flags, a single LLM layer) so it can be dropped back
-in as a module.
+Built for the hackathon **Built with Claude: Life Sciences** (Builder Track). Open
+source (MIT), built from scratch around a few deliberate seams (injected `db`,
+fail-closed feature flags, a single LLM layer) so the core stays portable and testable
+in isolation.
 
 ## Quickstart
 
@@ -37,16 +37,16 @@ protocol from a brief or a document, the voice copilot, and the report's prose
 interpretation (Auto Report falls back to a deterministic, no-LLM summary otherwise) and
 the `/chat` answers.
 
-## What makes it reliable (and Sylvy-compatible)
+## What makes it reliable
 
 - **Lab rigor lives in code.** Every number (master-mix scaling, dilution, unit
-  conversion) goes through `lib/live-experiment/core/calc.ts` — pure, deterministic,
+  conversion) goes through `lib/core/calc.ts` — pure, deterministic,
   tested functions. The LLM never computes a volume; it reads the number and explains it.
 - **A `Quantity { value, unit }` everywhere** — never a bare number.
 - **Fail-closed feature flags.** Each of the 8 bricks requires its own
   `FEATURE_*=true` env var, checked first-line in every server function.
 - **Portable.** Every brick function takes `db: Db` as its first argument. The demo runs
-  on SQLite; the exact same code re-plugs onto Postgres/pgvector via another `Db`
+  on SQLite; the exact same code re-plugs onto a hosted Postgres via another `Db`
   implementation, no business logic touched.
 - **A single LLM layer** (Vercel AI SDK → Claude). No brick talks to a provider SDK
   directly. Routing: Haiku (voice, latency), Sonnet (protocols), Opus (reports).
@@ -60,13 +60,19 @@ document editor).
 ## Architecture
 
 ```
-lib/live-experiment/   PORTABLE core — 8 bricks (protocol-studio, live-bench,
-                        evidence-capture, auto-report, lab-memory, voice-copilot,
-                        workflow-builder, knowledge-graph). Never imports Next or a
-                        host module; every function takes `db: Db` first (testable alone).
-lib/session.ts          standalone seam: SQLite adapter (adapters.standalone.ts,
-                        better-sqlite3) + fixed workspace (WS = "demo") + turns the
-                        8 FEATURE_* flags on.
+lib/core/               infra layer — shared types, deterministic calc, fail-closed
+                        feature flags, the `Db` persistence interface + its SQLite
+                        implementation, the single LLM layer (Vercel AI SDK → Claude).
+lib/bench/              PORTABLE core — bench business logic as 8 bricks (protocol-studio,
+                        live-bench, evidence-capture, auto-report, lab-memory*,
+                        voice-copilot, workflow-builder, knowledge-graph*). Never imports
+                        Next or a host module; every function takes `db: Db` first
+                        (testable alone). *lab-memory and knowledge-graph actually live in
+                        lib/retrieval/, re-exported from lib/bench where the bricks use them.
+lib/retrieval/           semantic lab memory — local embeddings, indexation, search, and
+                        the knowledge graph (typed relations between entities).
+lib/session.ts           app seam: fixed workspace (WS = "demo") + operator, resolves the
+                        SQLite store, turns the 8 FEATURE_* flags on.
 lib/rag.ts               host seam: indexes protocols/runs/evidence/reports into the
                         lab memory right after each successful action (best-effort).
 app/                    Next.js App Router — Bench pages, chat, API routes (voice
@@ -81,7 +87,7 @@ See [`docs/DECISIONS.md`](docs/DECISIONS.md) for the "why" behind each choice, a
 ## Tests
 
 ```bash
-npm test        # 97 tests (core + host seams) — lib/live-experiment is kept byte-for-byte verbatim
+npm test        # tests across core + bench + retrieval + host seams
 npx tsc --noEmit
 npm run lint
 ```
@@ -96,14 +102,6 @@ npm run lint
   ```
 - **`skills/rt-qpcr-protocol/`** — Agent Skill packaging RT-qPCR domain knowledge
   (master mix, scaling, cycling, Ct, MIQE, deviations).
-
-## Extracted from Sylvy
-
-Octopus's core (`lib/live-experiment/`) is extracted verbatim from [Sylvy](https://sylvy.co),
-a private AI workspace for research labs, kept identical down to the byte so it can be
-dropped back in as a module. Everything around it in this repo (the standalone SQLite
-seam, the Next.js UI, the MCP server, the demo dataset) is new work written for this
-hackathon.
 
 ## License
 

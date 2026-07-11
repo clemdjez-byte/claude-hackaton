@@ -1,6 +1,6 @@
-// lib/session.ts — la couture standalone (remplace sylvy-session.ts de Sylvy) :
-// workspace + opérateur fixes, résolution du store SQLite pour l'appli. Ne
-// jamais faire cet import depuis un composant client ni depuis le cœur des briques.
+// lib/session.ts — la couture applicative : workspace + opérateur fixes,
+// résolution du store SQLite pour l'appli. Ne jamais faire cet import depuis
+// un composant client ni depuis le cœur des briques.
 import { FLAGS, getDb, type Db } from "@/lib/core";
 
 // Active les 8 briques par défaut au chargement du module : un .env peut

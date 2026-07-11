@@ -3,44 +3,44 @@
 @source "../components/**/*.{ts,tsx}";
 
 :root {
-  /* === Sylvy design tokens (source: ~/.claude/skills/sylvy-design) === */
-  --background: #FAF9F4;        /* sy-cream */
-  --surface: #ffffff;            /* sy-paper */
-  --surface-2: #F0EDE3;          /* sy-paper-2 */
-  --surface-3: #E5E0D4;          /* sy-paper-3 */
-  --foreground: #1E1E1E;         /* sy-ink */
-  --ink-soft: #3a342c;           /* sy-ink-soft */
-  --muted: #6f6a60;              /* sy-muted */
-  --muted-soft: #a8a298;         /* sy-muted-soft */
-  --border: #E5E2D8;             /* sy-border */
-  --border-strong: #C8C5B6;      /* sy-border-strong */
+  /* === Design tokens === */
+  --background: #FAF9F4;
+  --surface: #ffffff;
+  --surface-2: #F0EDE3;
+  --surface-3: #E5E0D4;
+  --foreground: #1E1E1E;
+  --ink-soft: #3a342c;
+  --muted: #6f6a60;
+  --muted-soft: #a8a298;
+  --border: #E5E2D8;
+  --border-strong: #C8C5B6;
 
-  /* Green system — anchor at Sylvy Green #1FB958, primary accent = deep moss */
-  --accent: #117833;             /* sy-accent — deep moss, primary action */
-  --accent-bright: #1FB958;      /* sy-accent-bright — Sylvy Green, brand-only */
-  --accent-soft: #D8EFDE;        /* sy-accent-soft — calmed from #C5F0D2 */
+  /* Green system — anchor at brand green #1FB958, primary accent = deep moss */
+  --accent: #117833;             /* deep moss, primary action */
+  --accent-bright: #1FB958;      /* brand green, brand-only */
+  --accent-soft: #D8EFDE;        /* calmed from #C5F0D2 */
   --highlight: #f5edd3;
-  --danger: #E0341E;             /* sy-danger */
-  --warning: #E89A1A;             /* sy-warning */
-  --info: #1FC1E0;                /* sy-info */
-  --success: #1FB958;             /* sy-success — = accent-bright */
+  --danger: #E0341E;
+  --warning: #E89A1A;
+  --info: #1FC1E0;
+  --success: #1FB958;             /* = accent-bright */
 
   --status-active: var(--accent);
   --status-idle: var(--muted-soft);
   --status-coming-soon: var(--border-strong);
   --status-amber: var(--warning);
 
-  /* Spectre Sylvy (utilisé pour donner une identité couleur aux agents et
+  /* Palette d'accent (utilisée pour donner une identité couleur aux agents et
      ponctuer l'interface). Toutes les valeurs sont flat, jamais en gradient. */
-  --sy-forest: #0A4F26;        /* vert forêt — shade */
-  --sy-emerald: #1A9E47;       /* vert émeraude — core */
-  --sy-aqua: #0F9DAE;           /* aqua — shade */
-  --sy-turquoise: #1FB6C1;     /* turquoise — core */
-  --sy-leaf: #7FE0A3;           /* vert clair — tint */
-  --sy-mist: #C5F0D2;           /* turquoise très clair — tint */
-  --sy-amber-soft: #FCE6BE;     /* amber clair — tint */
-  --sy-brick-soft: #FAD6D0;     /* brick clair — tint */
-  --sy-info-soft: #CBEEF6;     /* aqua très clair — tint */
+  --oct-forest: #0A4F26;        /* vert forêt — shade */
+  --oct-emerald: #1A9E47;       /* vert émeraude — core */
+  --oct-aqua: #0F9DAE;           /* aqua — shade */
+  --oct-turquoise: #1FB6C1;     /* turquoise — core */
+  --oct-leaf: #7FE0A3;           /* vert clair — tint */
+  --oct-mist: #C5F0D2;           /* turquoise très clair — tint */
+  --oct-amber-soft: #FCE6BE;     /* amber clair — tint */
+  --oct-brick-soft: #FAD6D0;     /* brick clair — tint */
+  --oct-info-soft: #CBEEF6;     /* aqua très clair — tint */
 }
 
 @theme inline {
@@ -248,7 +248,7 @@ button, a {
     border: 1px dashed var(--border-strong);
   }
 
-  /* ===== Pills & chips (style Mistral × Sylvy) =====================
+  /* ===== Pills & chips =====================
      .pill   — capsule mono UPPERCASE pour status et sections.
      .chip   — capsule plus large, normal-case, pour CTA secondaires.
      .receipt — caption mono sous un titre, façon "instrument label". */
@@ -417,13 +417,13 @@ button, a {
 
 /* Tiptap editor + rendered HTML notes: minimal prose styling so the
    Word-like editor looks right without pulling in @tailwindcss/typography. */
-.sophie-editor .ProseMirror,
+.doc-editor .ProseMirror,
 .note-html {
   color: var(--ink-soft);
   font-size: 1rem;
   line-height: 1.7;
 }
-.sophie-editor .ProseMirror :is(h1),
+.doc-editor .ProseMirror :is(h1),
 .note-html :is(h1) {
   font-size: 1.875rem;
   font-weight: 600;
@@ -432,7 +432,7 @@ button, a {
   margin-bottom: 0.75rem;
   color: var(--foreground);
 }
-.sophie-editor .ProseMirror :is(h2),
+.doc-editor .ProseMirror :is(h2),
 .note-html :is(h2) {
   font-size: 1.375rem;
   font-weight: 600;
@@ -441,7 +441,7 @@ button, a {
   margin-bottom: 0.5rem;
   color: var(--foreground);
 }
-.sophie-editor .ProseMirror :is(h3),
+.doc-editor .ProseMirror :is(h3),
 .note-html :is(h3) {
   font-size: 1.05rem;
   font-weight: 600;
@@ -449,40 +449,40 @@ button, a {
   margin-bottom: 0.35rem;
   color: var(--foreground);
 }
-.sophie-editor .ProseMirror :is(p),
+.doc-editor .ProseMirror :is(p),
 .note-html :is(p) {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
 }
-.sophie-editor .ProseMirror :is(ul, ol),
+.doc-editor .ProseMirror :is(ul, ol),
 .note-html :is(ul, ol) {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
   padding-left: 1.5rem;
 }
-.sophie-editor .ProseMirror :is(ul) :is(li),
+.doc-editor .ProseMirror :is(ul) :is(li),
 .note-html :is(ul) :is(li) {
   list-style: disc;
 }
-.sophie-editor .ProseMirror :is(ol) :is(li),
+.doc-editor .ProseMirror :is(ol) :is(li),
 .note-html :is(ol) :is(li) {
   list-style: decimal;
 }
-.sophie-editor .ProseMirror :is(li),
+.doc-editor .ProseMirror :is(li),
 .note-html :is(li) {
   margin-top: 0.2rem;
   margin-bottom: 0.2rem;
 }
-.sophie-editor .ProseMirror :is(strong),
+.doc-editor .ProseMirror :is(strong),
 .note-html :is(strong) {
   color: var(--foreground);
   font-weight: 600;
 }
-.sophie-editor .ProseMirror :is(em),
+.doc-editor .ProseMirror :is(em),
 .note-html :is(em) {
   font-style: italic;
 }
-.sophie-editor .ProseMirror :is(code),
+.doc-editor .ProseMirror :is(code),
 .note-html :is(code) {
   font-family: var(--font-mono-display);
   font-size: 0.9em;
@@ -490,7 +490,7 @@ button, a {
   padding: 0.1em 0.35em;
   border-radius: 0.25rem;
 }
-.sophie-editor .ProseMirror :is(blockquote),
+.doc-editor .ProseMirror :is(blockquote),
 .note-html :is(blockquote) {
   border-left: 3px solid var(--border-strong);
   padding-left: 1rem;
@@ -498,10 +498,10 @@ button, a {
   margin: 0.75rem 0;
   font-style: italic;
 }
-.sophie-editor .ProseMirror:focus {
+.doc-editor .ProseMirror:focus {
   outline: none;
 }
-.sophie-editor .ProseMirror p.is-editor-empty:first-child::before {
+.doc-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--muted-soft);
   float: left;
@@ -509,33 +509,33 @@ button, a {
   height: 0;
 }
 
-.sophie-editor .ProseMirror .context-preview-source {
-  background: color-mix(in srgb, var(--sy-info-soft) 82%, transparent);
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--sy-info-soft) 82%, transparent);
+.doc-editor .ProseMirror .context-preview-source {
+  background: color-mix(in srgb, var(--oct-info-soft) 82%, transparent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--oct-info-soft) 82%, transparent);
   border-radius: 6px;
 }
 
-.sophie-editor .ProseMirror .context-preview-replace {
+.doc-editor .ProseMirror .context-preview-replace {
   background: color-mix(in srgb, var(--accent-soft) 86%, transparent);
   outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
   outline-offset: 5px;
   border-radius: 6px;
 }
 
-.sophie-editor .ProseMirror .context-preview-delete {
+.doc-editor .ProseMirror .context-preview-delete {
   background: color-mix(in srgb, var(--danger) 16%, transparent);
   outline: 2px solid color-mix(in srgb, var(--danger) 52%, transparent);
   outline-offset: 5px;
   border-radius: 6px;
 }
 
-.sophie-editor .ProseMirror .context-preview-insert-after,
-.sophie-editor .ProseMirror .context-preview-insert-start {
+.doc-editor .ProseMirror .context-preview-insert-after,
+.doc-editor .ProseMirror .context-preview-insert-start {
   position: relative;
 }
 
-.sophie-editor .ProseMirror .context-preview-insert-after::after,
-.sophie-editor .ProseMirror .context-preview-insert-start::before {
+.doc-editor .ProseMirror .context-preview-insert-after::after,
+.doc-editor .ProseMirror .context-preview-insert-start::before {
   content: "";
   display: block;
   height: 3px;
@@ -561,13 +561,13 @@ button, a {
   background: var(--highlight);
 }
 /* Décoration du texte "[[…" pendant la frappe, avant sélection. */
-.sophie-editor .ProseMirror .suggestion {
+.doc-editor .ProseMirror .suggestion {
   color: var(--accent);
   font-weight: 500;
 }
 
 /* Liens hypertexte. */
-.sophie-editor .ProseMirror :is(a),
+.doc-editor .ProseMirror :is(a),
 .note-html :is(a) {
   color: var(--accent);
   text-decoration: underline;
@@ -575,7 +575,7 @@ button, a {
 }
 
 /* Blocs de code. */
-.sophie-editor .ProseMirror :is(pre),
+.doc-editor .ProseMirror :is(pre),
 .note-html :is(pre) {
   background: var(--surface-2);
   border-radius: 0.4rem;
@@ -583,7 +583,7 @@ button, a {
   margin: 0.75rem 0;
   overflow-x: auto;
 }
-.sophie-editor .ProseMirror :is(pre) :is(code),
+.doc-editor .ProseMirror :is(pre) :is(code),
 .note-html :is(pre) :is(code) {
   background: none;
   padding: 0;
@@ -591,7 +591,7 @@ button, a {
 }
 
 /* Trait de séparation. */
-.sophie-editor .ProseMirror :is(hr),
+.doc-editor .ProseMirror :is(hr),
 .note-html :is(hr) {
   border: none;
   border-top: 1px solid var(--border);
@@ -599,34 +599,34 @@ button, a {
 }
 
 /* Cases à cocher (Tiptap TaskList). */
-.sophie-editor .ProseMirror ul[data-type="taskList"],
+.doc-editor .ProseMirror ul[data-type="taskList"],
 .note-html ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
 }
-.sophie-editor .ProseMirror ul[data-type="taskList"] li,
+.doc-editor .ProseMirror ul[data-type="taskList"] li,
 .note-html ul[data-type="taskList"] li {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
   list-style: none;
 }
-.sophie-editor .ProseMirror ul[data-type="taskList"] li > label,
+.doc-editor .ProseMirror ul[data-type="taskList"] li > label,
 .note-html ul[data-type="taskList"] li > label {
   flex-shrink: 0;
   margin-top: 0.3rem;
 }
-.sophie-editor .ProseMirror ul[data-type="taskList"] li > div,
+.doc-editor .ProseMirror ul[data-type="taskList"] li > div,
 .note-html ul[data-type="taskList"] li > div {
   flex: 1 1 auto;
 }
 
 /* Tableaux (Tiptap Table + rendu HTML). */
-.sophie-editor .ProseMirror .tableWrapper {
+.doc-editor .ProseMirror .tableWrapper {
   overflow-x: auto;
   margin: 0.75rem 0;
 }
-.sophie-editor .ProseMirror table,
+.doc-editor .ProseMirror table,
 .note-html table {
   border-collapse: collapse;
   width: 100%;
@@ -634,7 +634,7 @@ button, a {
   font-size: 0.95em;
   table-layout: fixed;
 }
-.sophie-editor .ProseMirror :is(th, td),
+.doc-editor .ProseMirror :is(th, td),
 .note-html :is(th, td) {
   border: 1px solid var(--border);
   padding: 0.4rem 0.6rem;
@@ -642,20 +642,20 @@ button, a {
   vertical-align: top;
   position: relative;
 }
-.sophie-editor .ProseMirror :is(th),
+.doc-editor .ProseMirror :is(th),
 .note-html :is(th) {
   background: var(--surface-2);
   font-weight: 600;
   color: var(--foreground);
 }
-.sophie-editor .ProseMirror .selectedCell::after {
+.doc-editor .ProseMirror .selectedCell::after {
   content: "";
   position: absolute;
   inset: 0;
   background: var(--accent-soft);
   pointer-events: none;
 }
-.sophie-editor .ProseMirror .column-resize-handle {
+.doc-editor .ProseMirror .column-resize-handle {
   position: absolute;
   right: -2px;
   top: 0;

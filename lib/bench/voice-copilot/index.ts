@@ -46,8 +46,8 @@ export function buildSystemPrompt(ctx: RunContext, lang: VoiceLang = "fr"): stri
 
   const voiceLine =
     lang === "en"
-      ? "Sylvy voice: calm, precise, in English, one or two short sentences (the user's hands are busy). NEVER any emoji, no superfluous exclamation marks. Use the TOOLS to act rather than describe."
-      : "Voix Sylvy : calme, précise, en français, une à deux phrases courtes (l'utilisateur a les mains prises). JAMAIS d'emoji, pas de point d'exclamation superflu. Utilise les OUTILS pour agir plutôt que de décrire.";
+      ? "You are the lab's voice copilot: calm, precise, in English, one or two short sentences (the user's hands are busy). NEVER any emoji, no superfluous exclamation marks. Use the TOOLS to act rather than describe."
+      : "Tu es le copilote vocal du labo : calme, précise, en français, une à deux phrases courtes (l'utilisateur a les mains prises). JAMAIS d'emoji, pas de point d'exclamation superflu. Utilise les OUTILS pour agir plutôt que de décrire.";
 
   return `Tu es Octopus, copilote vocal d'expérience au bench. Tu pilotes CE run à la voix.
 ${voiceLine}
@@ -107,7 +107,7 @@ async function prepareVoiceTurn(
 }
 
 /** Un tour de l'agent vocal, réponse complète (JSON, pas de flux). Conservé pour
- *  l'OSS / les consommateurs non-streaming. La route Sylvy utilise streamVoiceCommand. */
+ *  l'OSS / les consommateurs non-streaming. La route HTTP utilise streamVoiceCommand. */
 export async function handleVoiceCommand(
   db: Db,
   ws: Ws,

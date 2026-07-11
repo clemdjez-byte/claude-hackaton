@@ -6,7 +6,7 @@
 // Les vecteurs sont produits par embed() (bag-of-words local déterministe) et
 // comparés par cosine() — tous deux fournis par ce domaine (embed.ts). Stockage
 // via la primitive `embedding` (db.insertEmbedding / db.listEmbeddings) : aucune
-// table nouvelle. Swappable vers pgvector côté Sylvy sans toucher à ce fichier.
+// table nouvelle. Swappable vers une extension vectorielle Postgres sans toucher à ce fichier.
 import {
   assertEnabled,
   type Db,

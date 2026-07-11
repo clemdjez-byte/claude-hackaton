@@ -11,7 +11,7 @@ import { getBenchSession, WS } from "@/lib/session";
 export const runtime = "nodejs";
 export const maxDuration = 300; // transcription Claude + génération peuvent être longues.
 
-const MAX_BYTES = 20 * 1024 * 1024; // 20 Mo, comme l'import Sylvy.
+const MAX_BYTES = 20 * 1024 * 1024; // 20 Mo, cohérent avec le reste de l'import de documents.
 const TEXT_CAP = 16000; // borne d'entrée LLM.
 
 // ── Détection de type : par EXTENSION d'abord (le MIME envoyé par le
@@ -22,8 +22,7 @@ function extOf(name: string): string {
   return m ? m[1] : "";
 }
 
-// Recopié de SYLVY lib/markdown.ts (fonction pure, 3 lignes) : un .md est déjà
-// du texte, pas besoin d'extraction.
+// Fonction pure, 3 lignes : un .md est déjà du texte, pas besoin d'extraction.
 function isMarkdownFile(mimeType: string, fileName: string): boolean {
   if (mimeType === "text/markdown" || mimeType === "text/x-markdown") return true;
   return /\.(md|markdown)$/i.test(fileName);
@@ -32,7 +31,6 @@ function isMarkdownFile(mimeType: string, fileName: string): boolean {
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // docx → texte : mammoth rend du HTML, on retire les balises pour un brief propre.
-// Recopié de la route SYLVY équivalente.
 function htmlToText(html: string): string {
   return html
     .replace(/<[^>]+>/g, " ")
@@ -102,7 +100,7 @@ export async function POST(req: Request) {
   const { store } = getBenchSession();
 
   // Extraction du texte de chaque fichier, puis concaténation étiquetée par
-  // nom de fichier (même schéma que l'import Sylvy).
+  // nom de fichier.
   const parts: string[] = [];
   for (const file of files) {
     const buffer = Buffer.from(await file.arrayBuffer());

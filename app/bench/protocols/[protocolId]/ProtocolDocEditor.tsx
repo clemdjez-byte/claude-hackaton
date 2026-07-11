@@ -218,7 +218,7 @@ export default function ProtocolDocEditor({
       )}
 
       {/* éditeur document */}
-      <div className="sophie-editor">
+      <div className="doc-editor">
         <NoteEditor
           initialContent={initialDoc}
           extraExtensions={[ProtocolStepNode]}
