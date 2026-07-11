@@ -31,6 +31,13 @@ Puis, dans Claude Code : *« cherche dans la mémoire du labo les runs où l'hyb
 
 ## Note
 
-L'embedder (hashing bag-of-words, dim 256) est dupliqué depuis `lib/core/embed.ts`
-pour garder ce paquet autonome. Garder les deux en phase (même dimension, même
-hachage) pour que les vecteurs stockés par l'app restent comparables.
+L'embedder (hashing bag-of-words, dim 256) est dupliqué depuis
+`lib/live-experiment/core/embed.ts` pour garder ce paquet autonome. Garder les deux en
+phase (même dimension, même hachage) pour que les vecteurs stockés par l'app restent
+comparables.
+
+**Vérifié (Task 8) :** ce paquet n'importe rien de `lib/core`/`features/` (l'ancien
+cœur, supprimé) — il parle SQL directement à `octopus.db` (schéma `page`/`embedding`,
+inchangé par la resynchronisation du cœur) et duplique volontairement son propre
+embedder. Aucune mise à jour de code nécessaire, seuls les commentaires ci-dessus et
+dans `src/index.ts` référençaient encore l'ancien chemin `lib/core/embed.ts`.

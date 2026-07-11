@@ -35,6 +35,28 @@ Le « pourquoi » de chaque choix (exigence Sylvy : documentation continue).
 - **Modèles** : Haiku 4.5 (voix, latence), Sonnet 5 (protocoles), Opus 4.8 (rapports).
   Routage dans `lib/core/llm.ts`, jamais dans les briques.
 
+## Resynchronisation du cœur + chat RAG (post-hackathon initial)
+
+- **Le cœur a été resynchronisé, verbatim, depuis `lib/live-experiment` de Sylvy** —
+  remplace l'ancien cœur maison `lib/core/` + `features/<brique>/` du build initial du
+  hackathon. Décision : partir du code de production réel de Sylvy (mêmes tests, mêmes
+  invariants de rigueur labo) plutôt que de faire diverger deux implémentations du même
+  concept. `lib/live-experiment/` reste STRICTEMENT identique à Sylvy (vérifiable par
+  `diff -r`), à l'exclusion de 3 fichiers de couture non copiés (`adapters.sylvy.ts`,
+  `bridge.sylvy.ts`, `sylvy-session.ts`) — ce standalone n'a que sa propre couture,
+  `lib/session.ts` + `lib/live-experiment/adapters.standalone.ts` (SQLite).
+- **Toute l'app hôte a été réécrite en conséquence** : `app/bench/**` (bibliothèque de
+  protocoles en éditeur-document Tiptap, console de run plein écran, rapport), routes
+  API (photos, import de documents, voix NDJSON), `lib/rag.ts` (indexation best-effort
+  de chaque entité dans la mémoire du labo après une action réussie).
+- **Chat « Ask your lab » (RAG)** : nouvelle brique hôte (`app/api/chat`, `app/chat/`)
+  qui interroge `lib/live-experiment/features/lab-memory` (`search`) puis laisse Claude
+  répondre en streaming NDJSON, avec citation obligatoire `[type:id]` pour chaque
+  affirmation — jamais de fait hors du contexte retrouvé. Nécessite `ANTHROPIC_API_KEY`
+  (pas de repli hors-ligne pour le chat, contrairement au rapport).
+- **97 tests verts** sur `lib/live-experiment/` après la resynchronisation (cœur non
+  modifié depuis).
+
 ## Invariants de rigueur (vérifiés par le code, pas sur parole du modèle)
 
 - **Un chiffre n'existe que s'il vient de `calc.ts`** (ou d'une `Evidence` mesurée).

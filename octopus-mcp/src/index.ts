@@ -10,8 +10,9 @@ import { z } from "zod";
 const DB_PATH = process.env.OCTOPUS_DB_PATH || "octopus.db";
 const DEFAULT_WS = process.env.OCTOPUS_WS || "demo-lab";
 
-// ── Embedder — DOIT rester en phase avec lib/core/embed.ts (même dim, même hash)
-// pour que les vecteurs stockés par l'app soient comparables ici.
+// ── Embedder — DOIT rester en phase avec lib/live-experiment/core/embed.ts
+// (même dim, même hash) pour que les vecteurs stockés par l'app soient
+// comparables ici.
 const EMBED_DIM = 256;
 function embed(text: string): number[] {
   const vec = new Array<number>(EMBED_DIM).fill(0);

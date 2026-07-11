@@ -1,88 +1,110 @@
 # 🐙 Octopus — wet lab operating system
 
-**Le scientifique augmenté à plusieurs bras.** Octopus transforme une intention ou un
-protocole en workflow exécutable, guide la manip **à la voix**, capture chaque preuve,
-puis génère un **rapport auditable** qui alimente la **mémoire du labo**.
+**Protocol → voice-guided bench run → auditable report → ask your lab.** Octopus turns
+a written protocol into an executable run, guides the bench **by voice**, captures every
+piece of evidence (notes, photos, measurements, deviations), and reconstructs a
+**planned / actually done / observed / interpreted** report where every claim cites its
+source — then feeds it all into a semantic **lab memory** you can query in plain language.
 
-> « Je lance et documente une expérience entière sans jamais remplir un ELN à la main. »
+Built for the hackathon **Built with Claude: Life Sciences** (Builder Track). New work,
+open source (MIT), [extracted from Sylvy](#extracted-from-sylvy) with the same seams
+(injected `db`, fail-closed feature flags, a single LLM layer) so it can be dropped back
+in as a module.
 
-Construit pour le hackathon **Built with Claude: Life Sciences** (Builder Track). Neuf,
-open source (MIT), et pensé pour se brancher dans [Sylvy](https://) en drop-in — mêmes
-coutures (couche `db` injectée, flags débrayables, couche LLM unique).
-
----
-
-## Les 8 bras
-
-| Brique | Rôle |
-|---|---|
-| **Protocol Studio** | créer / adapter (Claude) / **versionner** / publier des protocoles sourcés |
-| **Workflow Builder** | composer des protocoles en template exécutable (versions épinglées) |
-| **Live Bench Mode** | lancer un `Run`, **figer** le scaling déterministe, piloter étape par étape |
-| **Voice Copilot** | mains-libres : Claude agit via des outils (avance, minuteur, note, mesure, déviation, mémoire) |
-| **Evidence Capture** | notes / photos / mesures / déviations attachées à une étape, horodatées et sourcées |
-| **Auto Report** | rapport **prévu / réellement fait / observé / interprété**, chaque observation citée |
-| **Lab Memory** | mémoire sémantique interrogeable (embeddings) |
-| **Knowledge Graph** | relations typées navigables (run ↔ protocole ↔ réactif ↔ preuve) |
-
-## Ce qui rend Octopus fiable (et « Sylvy-compatible »)
-
-- **Rigueur de labo par le code.** Tout calcul (mise à l'échelle d'un master mix,
-  dilution, conversion d'unités) passe par `lib/core/calc.ts` — **fonctions pures,
-  déterministes, testées**. Le LLM ne calcule jamais « de tête » : il lit les valeurs
-  déjà calculées et les explique. `264 / 13,2 / 13,2 / 184,8 → 475,2 µL`, au µL près.
-- **Débrayable.** Chaque brique a un flag serveur **fail-closed** (`FEATURE_*` = `true`
-  strictement). Désactivée, l'app se comporte comme avant.
-- **Testable et portable.** Chaque fonction serveur prend `db: Db` en premier argument.
-  La démo tourne sur SQLite ; le même code se rebranche sur Postgres/pgvector via une
-  autre implémentation de `Db`, sans toucher au métier.
-- **Couche LLM unique** (Vercel AI SDK → Claude). Aucune brique ne parle à un SDK
-  fournisseur en direct. Routage : Haiku (voix), Sonnet (protocoles), Opus (rapports).
-
-## Démarrer
+## Quickstart
 
 ```bash
 npm install
-cp .env.example .env.local   # mets ta clé ANTHROPIC_API_KEY (déjà rempli en .env.local de dev)
-npm run dev                  # http://localhost:3000
+cp .env.example .env.local     # ANTHROPIC_API_KEY is optional, see below
+npm run seed                   # demo dataset: 2 protocols, 3 runs, 1 report
+npm run dev                    # http://localhost:3000
 ```
 
-Parcours : `/protocol` (adapter / mettre à l'échelle → **Lancer un run**) → `/run/[id]`
-(voix + minuteurs + preuves) → **Terminer & rapport** → `/report/[id]` → `/memory`.
+Walkthrough: `/` → `/bench/protocols` (library — generate a protocol from a brief or from
+uploaded documents) → open a protocol → **Activate at the bench →** → `/bench/run/[runId]`
+(voice copilot, timers, notes/measurements/deviations/photos) → **Finish & report →** →
+`/bench/report/[runId]` (planned/performed/observed/interpreted, every observation cited)
+→ `/chat` (**Ask your lab** — sourced answers from everything captured so far).
 
-Un run complet en un clic (utile pour la démo) : `POST /api/demo/run`.
+To reset to a clean demo state: `rm -f octopus.db* && npm run seed`.
 
-Sans clé LLM, tout le socle déterministe fonctionne (scaling, run, rapport factuel,
-mémoire) ; la clé débloque l'adaptation de protocole, le copilote vocal et la prose
-d'interprétation du rapport.
+### Without an Anthropic key
 
-## Tests
+`npm run seed`, the whole protocol/run/evidence/report pipeline, and browsing the Bench
+work with **no key at all** — the deterministic core (master-mix scaling, run execution,
+evidence, report facts) never touches an LLM. A key only unlocks: generating/adapting a
+protocol from a brief or a document, the voice copilot, and the report's prose
+interpretation (Auto Report falls back to a deterministic, no-LLM summary otherwise) and
+the `/chat` answers.
 
-```bash
-npm test        # 64 tests (calcul déterministe, flags fail-closed, les 8 briques)
-```
+## What makes it reliable (and Sylvy-compatible)
 
-## Serveur MCP + Agent Skill (Claude Use)
+- **Lab rigor lives in code.** Every number (master-mix scaling, dilution, unit
+  conversion) goes through `lib/live-experiment/core/calc.ts` — pure, deterministic,
+  tested functions. The LLM never computes a volume; it reads the number and explains it.
+- **A `Quantity { value, unit }` everywhere** — never a bare number.
+- **Fail-closed feature flags.** Each of the 8 bricks requires its own
+  `FEATURE_*=true` env var, checked first-line in every server function.
+- **Portable.** Every brick function takes `db: Db` as its first argument. The demo runs
+  on SQLite; the exact same code re-plugs onto Postgres/pgvector via another `Db`
+  implementation, no business logic touched.
+- **A single LLM layer** (Vercel AI SDK → Claude). No brick talks to a provider SDK
+  directly. Routing: Haiku (voice, latency), Sonnet (protocols), Opus (reports).
 
-- **`octopus-mcp/`** — serveur MCP (stdio) qui expose la mémoire, les protocoles et les
-  rapports à Claude Code / Claude Desktop. Claude interroge le vrai Octopus.
-  ```bash
-  cd octopus-mcp && npm install && npm run build
-  claude mcp add octopus -- node octopus-mcp/build/index.js   # ou via .mcp.json
-  ```
-- **`skills/rt-qpcr-protocol/`** — Agent Skill (le savoir RT-qPCR : master mix, scaling,
-  cyclage, Ct, MIQE, déviations).
+## Stack
+
+Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind 4 · Vercel AI SDK 7
+(`@ai-sdk/anthropic`) · Zod 4 · Vitest · SQLite (`better-sqlite3`) · Tiptap (protocol
+document editor).
 
 ## Architecture
 
 ```
-lib/core/         # socle sans métier : db (seam), types, flags, llm, calc, embed
-features/<brique>/ # 8 briques plates, communiquant par leur index.ts
-app/              # Next.js App Router : pages + server actions + /api/voice
-octopus-mcp/      # serveur MCP autonome (stdio)
-skills/           # Agent Skill
+lib/live-experiment/   PORTABLE core — 8 bricks (protocol-studio, live-bench,
+                        evidence-capture, auto-report, lab-memory, voice-copilot,
+                        workflow-builder, knowledge-graph). Never imports Next or a
+                        host module; every function takes `db: Db` first (testable alone).
+lib/session.ts          standalone seam: SQLite adapter (adapters.standalone.ts,
+                        better-sqlite3) + fixed workspace (WS = "demo") + turns the
+                        8 FEATURE_* flags on.
+lib/rag.ts               host seam: indexes protocols/runs/evidence/reports into the
+                        lab memory right after each successful action (best-effort).
+app/                    Next.js App Router — Bench pages, chat, API routes (voice
+                        NDJSON stream, photo/data capture, document import).
+octopus-mcp/             standalone MCP server (stdio) — Claude Code/Desktop can query
+                        the same octopus.db without the Next app running.
 ```
 
-Stack : Next.js 16 · React 19 · TypeScript · Tailwind 4 · Vercel AI SDK 7 (@ai-sdk/anthropic) · Zod 4 · Vitest · SQLite (better-sqlite3).
+See [`docs/DECISIONS.md`](docs/DECISIONS.md) for the "why" behind each choice, and
+[`docs/demo-script.md`](docs/demo-script.md) for a timed walkthrough of the demo.
 
-Voir [`docs/DECISIONS.md`](docs/DECISIONS.md) pour le journal des décisions (le « pourquoi »).
+## Tests
+
+```bash
+npm test        # 97 tests — the lib/live-experiment core, kept byte-for-byte verbatim
+npx tsc --noEmit
+npm run lint
+```
+
+## MCP server + Agent Skill (Claude Use)
+
+- **`octopus-mcp/`** — standalone MCP server (stdio) exposing lab memory, protocols and
+  reports to Claude Code / Claude Desktop. Claude queries the real Octopus data.
+  ```bash
+  cd octopus-mcp && npm install && npm run build
+  claude mcp add octopus -- node octopus-mcp/build/index.js   # or via the repo's .mcp.json
+  ```
+- **`skills/rt-qpcr-protocol/`** — Agent Skill packaging RT-qPCR domain knowledge
+  (master mix, scaling, cycling, Ct, MIQE, deviations).
+
+## Extracted from Sylvy
+
+Octopus's core (`lib/live-experiment/`) is extracted verbatim from [Sylvy](https://sylvy.co),
+a private AI workspace for research labs, kept identical down to the byte so it can be
+dropped back in as a module. Everything around it in this repo (the standalone SQLite
+seam, the Next.js UI, the MCP server, the demo dataset) is new work written for this
+hackathon.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
