@@ -9,11 +9,31 @@
 // « Activate at the bench »).
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { startRun, generateProtocol, adaptProtocol, publishProtocol, sealDraft } from "@/lib/live-experiment";
+import {
+  startRun,
+  generateProtocol,
+  adaptProtocol,
+  publishProtocol,
+  sealDraft,
+  advanceStep,
+  skipStep,
+  stepBack,
+  pauseRun,
+  resumeRun,
+  completeRun,
+  captureNote,
+  captureMeasurement,
+  captureDeviation,
+  deleteEvidence,
+} from "@/lib/live-experiment";
 import { getBenchSession, WS } from "@/lib/session";
 
 function protocolPath(protocolId: string) {
   return `/bench/protocols/${protocolId}`;
+}
+
+function runPath(runId: string) {
+  return `/bench/run/${runId}`;
 }
 
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
@@ -59,4 +79,86 @@ export async function startRunAction(protocolId: string, n: number, overage: num
     params: { n_reactions: n, overage_pct: overage },
   });
   redirect(`/bench/run/${runCtx.run.id}`);
+}
+
+// ── Console de run (paillasse live) ───────────────────────────────────────
+
+export async function advanceStepAction(runId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await advanceStep(store, runId);
+  revalidatePath(runPath(runId));
+}
+
+export async function skipStepAction(runId: string, stepId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await skipStep(store, stepId);
+  revalidatePath(runPath(runId));
+}
+
+/** Recule d'une étape (annule un « Done » accidentel). */
+export async function stepBackAction(runId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await stepBack(store, runId);
+  revalidatePath(runPath(runId));
+}
+
+export async function pauseRunAction(runId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await pauseRun(store, runId);
+  revalidatePath(runPath(runId));
+  revalidatePath("/bench");
+}
+
+export async function resumeRunAction(runId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await resumeRun(store, runId);
+  revalidatePath(runPath(runId));
+  revalidatePath("/bench");
+}
+
+export async function captureNoteAction(
+  runId: string,
+  stepId: string | undefined,
+  text: string
+): Promise<void> {
+  const { store, ctx } = getBenchSession();
+  await captureNote(store, runId, stepId, text, ctx.userId);
+  revalidatePath(runPath(runId));
+}
+
+export async function captureMeasurementAction(
+  runId: string,
+  stepId: string | undefined,
+  m: { name?: string; value: number; unit: string; instrument?: string }
+): Promise<void> {
+  const { store, ctx } = getBenchSession();
+  await captureMeasurement(store, runId, stepId, m, ctx.userId);
+  revalidatePath(runPath(runId));
+}
+
+export async function captureDeviationAction(
+  runId: string,
+  stepId: string | undefined,
+  d: { expected: string; actual: string; reason?: string; severity: "minor" | "major" | "critical" }
+): Promise<void> {
+  const { store, ctx } = getBenchSession();
+  await captureDeviation(store, runId, stepId, d, ctx.userId);
+  revalidatePath(runPath(runId));
+}
+
+/** Supprime une observation (note, mesure, déviation, photo, data). Les bytes
+ *  d'un éventuel fichier attaché (photo / data) restent dans la table `fichier`
+ *  (pas de nettoyage — acceptable pour la démo standalone, cf. Task 4 brief §10). */
+export async function deleteEvidenceAction(runId: string, evidenceId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await deleteEvidence(store, evidenceId);
+  revalidatePath(runPath(runId));
+}
+
+/** Termine le run. Version provisoire : pas encore de rapport auditable généré
+ *  (Task 6) — on renvoie simplement au tableau de bord Bench. */
+export async function completeRunAction(runId: string): Promise<void> {
+  const { store } = getBenchSession();
+  await completeRun(store, runId);
+  redirect("/bench");
 }
