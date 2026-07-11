@@ -3,7 +3,7 @@
 // seul repère, la bibliothèque de protocoles + les runs (en cours et passés).
 // Pas de segment [id] projet, pas de gate lab (ws fixe, cf. lib/session.ts).
 import Link from "next/link";
-import { listRunsOverview } from "@/lib/live-experiment";
+import { getReport, listRunsOverview } from "@/lib/live-experiment";
 import type { RunOverview } from "@/lib/live-experiment";
 import { getBenchSession, WS } from "@/lib/session";
 import { pauseRunAction, resumeRunAction } from "./actions";
@@ -15,7 +15,7 @@ function when(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
 }
 
-function RunCard({ o }: { o: RunOverview }) {
+function RunCard({ o, hasReport = false }: { o: RunOverview; hasReport?: boolean }) {
   const live = o.run.status === "active" || o.run.status === "paused";
   return (
     <div className="card card-hover p-5 fade-up space-y-3">
@@ -37,6 +37,11 @@ function RunCard({ o }: { o: RunOverview }) {
           </button>
         </form>
       )}
+      {hasReport && (
+        <Link href={`/bench/report/${o.run.id}`} className="chip inline-block">
+          View report →
+        </Link>
+      )}
     </div>
   );
 }
@@ -52,6 +57,17 @@ export default async function BenchPage() {
   ]);
   const inProgress = [...active, ...paused].sort((a, b) => b.run.startedAt.localeCompare(a.run.startedAt));
   const past = [...completed, ...aborted].sort((a, b) => b.run.startedAt.localeCompare(a.run.startedAt));
+
+  // Un run complété a un rapport SAUF s'il a été complété avant l'existence de
+  // cette fonctionnalité (Task 6) — on vérifie plutôt que de supposer, pour ne
+  // jamais afficher un lien mort.
+  const reportedRunIds = new Set(
+    (
+      await Promise.all(
+        completed.map(async (o) => ((await getReport(store, o.run.id)) ? o.run.id : null))
+      )
+    ).filter((id): id is string => id !== null)
+  );
 
   return (
     <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-8">
@@ -96,7 +112,7 @@ export default async function BenchPage() {
           <h2 className="text-lg font-semibold tracking-tight">Past runs</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {past.map((o) => (
-              <RunCard key={o.run.id} o={o} />
+              <RunCard key={o.run.id} o={o} hasReport={reportedRunIds.has(o.run.id)} />
             ))}
           </div>
         </section>

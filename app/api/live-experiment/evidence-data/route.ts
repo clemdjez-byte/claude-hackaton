@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { captureDataFile } from "@/lib/live-experiment";
 import { getBenchSession, WS } from "@/lib/session";
+import { indexEvidence } from "@/lib/rag";
 
 export const runtime = "nodejs";
 
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
       ctx.userId,
       typeof caption === "string" ? caption : undefined
     );
+    await indexEvidence(store, evidence);
     return Response.json({ evidenceId: evidence.id });
   } catch (e) {
     return Response.json(

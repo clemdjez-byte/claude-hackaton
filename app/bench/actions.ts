@@ -25,8 +25,12 @@ import {
   captureMeasurement,
   captureDeviation,
   deleteEvidence,
+  getRunContext,
+  generateReport,
+  exportReportMarkdown,
 } from "@/lib/live-experiment";
 import { getBenchSession, WS } from "@/lib/session";
+import { indexProtocol, indexEvidence, indexRun, indexReport } from "@/lib/rag";
 
 function protocolPath(protocolId: string) {
   return `/bench/protocols/${protocolId}`;
@@ -56,14 +60,16 @@ export async function adaptProtocolAction(protocolId: string, instruction: strin
 /** Publie un protocole (refuse sans source, côté brique). */
 export async function publishProtocolAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
-  await publishProtocol(store, protocolId);
+  const protocol = await publishProtocol(store, protocolId);
+  await indexProtocol(store, protocol);
   revalidatePath(protocolPath(protocolId));
 }
 
 /** Fige une version immuable depuis le brouillon (draft_doc), sans publier. */
 export async function sealDraftAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
-  await sealDraft(store, protocolId);
+  const { protocol } = await sealDraft(store, protocolId);
+  await indexProtocol(store, protocol);
   revalidatePath(protocolPath(protocolId));
 }
 
@@ -71,7 +77,8 @@ export async function sealDraftAction(protocolId: string): Promise<void> {
  *  la version FIGÉE, pas le brouillon mutable). */
 export async function startRunAction(protocolId: string, n: number, overage: number): Promise<void> {
   const { store, ctx } = getBenchSession();
-  const { version } = await sealDraft(store, protocolId);
+  const { version, protocol } = await sealDraft(store, protocolId);
+  await indexProtocol(store, protocol);
   const runCtx = await startRun(store, WS, {
     operator: ctx.userId,
     protocolId,
@@ -122,7 +129,8 @@ export async function captureNoteAction(
   text: string
 ): Promise<void> {
   const { store, ctx } = getBenchSession();
-  await captureNote(store, runId, stepId, text, ctx.userId);
+  const evidence = await captureNote(store, runId, stepId, text, ctx.userId);
+  await indexEvidence(store, evidence);
   revalidatePath(runPath(runId));
 }
 
@@ -132,7 +140,8 @@ export async function captureMeasurementAction(
   m: { name?: string; value: number; unit: string; instrument?: string }
 ): Promise<void> {
   const { store, ctx } = getBenchSession();
-  await captureMeasurement(store, runId, stepId, m, ctx.userId);
+  const evidence = await captureMeasurement(store, runId, stepId, m, ctx.userId);
+  await indexEvidence(store, evidence);
   revalidatePath(runPath(runId));
 }
 
@@ -142,7 +151,8 @@ export async function captureDeviationAction(
   d: { expected: string; actual: string; reason?: string; severity: "minor" | "major" | "critical" }
 ): Promise<void> {
   const { store, ctx } = getBenchSession();
-  await captureDeviation(store, runId, stepId, d, ctx.userId);
+  const evidence = await captureDeviation(store, runId, stepId, d, ctx.userId);
+  await indexEvidence(store, evidence);
   revalidatePath(runPath(runId));
 }
 
@@ -155,10 +165,17 @@ export async function deleteEvidenceAction(runId: string, evidenceId: string): P
   revalidatePath(runPath(runId));
 }
 
-/** Termine le run. Version provisoire : pas encore de rapport auditable généré
- *  (Task 6) — on renvoie simplement au tableau de bord Bench. */
+/** Termine le run, génère le rapport auditable (Brique Auto Report — repli
+ *  hors-ligne déterministe si aucune clé LLM), indexe le tout dans la mémoire
+ *  du lab (best-effort), puis ouvre la page rapport. */
 export async function completeRunAction(runId: string): Promise<void> {
   const { store } = getBenchSession();
-  await completeRun(store, runId);
-  redirect("/bench");
+  // Capturé avant complétion : titre du protocole + étapes, pour l'indexation du run.
+  const ctx = await getRunContext(store, runId);
+  const run = await completeRun(store, runId);
+  const report = await generateReport(store, runId);
+  if (ctx) await indexRun(store, run, ctx.protocol.title, ctx.steps);
+  const markdown = await exportReportMarkdown(store, runId);
+  await indexReport(store, report, markdown);
+  redirect(`/bench/report/${runId}`);
 }
