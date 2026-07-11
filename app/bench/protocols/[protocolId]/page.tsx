@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { getProtocol } from "@/lib/live-experiment";
-import { stepsToDoc } from "@/lib/live-experiment/features/protocol-studio/doc";
+import { getProtocol } from "@/lib/bench";
+import { stepsToDoc } from "@/lib/bench/protocol-studio/doc";
 import { getBenchSession } from "@/lib/session";
 import ProtocolDocEditor from "./ProtocolDocEditor";
 

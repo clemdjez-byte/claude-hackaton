@@ -8,8 +8,8 @@
 // dépendance markdown nouvelle.
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getReport, generateReport, exportReportMarkdown } from "@/lib/live-experiment";
-import type { ReportCitation } from "@/lib/live-experiment";
+import { getReport, generateReport, exportReportMarkdown } from "@/lib/bench";
+import type { ReportCitation } from "@/lib/core";
 import { getBenchSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";

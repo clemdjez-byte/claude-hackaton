@@ -12,7 +12,7 @@ import {
   NodeViewContent,
   type NodeViewProps,
 } from "@tiptap/react";
-import { PROTOCOL_STEP_NODE } from "@/lib/live-experiment/features/protocol-studio/node-contract";
+import { PROTOCOL_STEP_NODE } from "@/lib/bench/protocol-studio/node-contract";
 
 /** Un node « étape » vierge (pour l'insertion via le bouton « + étape »). */
 export function makeEmptyStep() {

@@ -7,7 +7,7 @@ import { useDebouncedCallback } from "use-debounce";
 import { NoteEditor } from "@/app/components/NoteEditor";
 import { ProtocolStepNode, makeEmptyStep } from "@/app/components/protocol-step-node";
 import ScaleActivatePanel from "./ScaleActivatePanel";
-import type { Protocol, Recipe } from "@/lib/live-experiment/core/types";
+import type { Protocol, Recipe } from "@/lib/core/types";
 import { startRunAction, publishProtocolAction } from "../../actions";
 
 type SaveState = "idle" | "saving" | "saved" | "error";

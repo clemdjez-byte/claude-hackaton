@@ -1,10 +1,7 @@
-// lib/session.ts — la couture standalone (remplace sylvy-session.ts de Sylvy).
-// Fichier hôte (hors lib/live-experiment) : a le droit d'importer l'adaptateur
-// SQLite directement — c'est son rôle. Ne jamais faire cet import depuis un
-// composant client ni depuis le cœur de la brique.
-import { FLAGS } from "@/lib/live-experiment";
-import { getDb } from "@/lib/live-experiment/adapters.standalone";
-import type { Db } from "@/lib/live-experiment";
+// lib/session.ts — la couture standalone (remplace sylvy-session.ts de Sylvy) :
+// workspace + opérateur fixes, résolution du store SQLite pour l'appli. Ne
+// jamais faire cet import depuis un composant client ni depuis le cœur des briques.
+import { FLAGS, getDb, type Db } from "@/lib/core";
 
 // Active les 8 briques par défaut au chargement du module : un .env peut
 // toujours désactiver une brique en posant sa variable à autre chose que 'true'.

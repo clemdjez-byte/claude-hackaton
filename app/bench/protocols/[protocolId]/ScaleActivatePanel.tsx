@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { scaleMasterMix } from "@/lib/live-experiment/core/calc";
-import type { Recipe, RecipeComponent } from "@/lib/live-experiment/core/types";
+import { scaleMasterMix } from "@/lib/core/calc";
+import type { Recipe, RecipeComponent } from "@/lib/core/types";
 
 function num(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, "");

@@ -1,10 +1,10 @@
 // Hub Bench — fusion de l'ancien conteneur (app/projects/[id]/bench/page.tsx)
-// et du tableau de bord Live experiment (.../live-experiment/page.tsx) : un
-// seul repère, la bibliothèque de protocoles + les runs (en cours et passés).
+// et de l'ancien tableau de bord d'expérience live : un seul repère, la
+// bibliothèque de protocoles + les runs (en cours et passés).
 // Pas de segment [id] projet, pas de gate lab (ws fixe, cf. lib/session.ts).
 import Link from "next/link";
-import { getReport, listRunsOverview } from "@/lib/live-experiment";
-import type { RunOverview } from "@/lib/live-experiment";
+import { getReport, listRunsOverview } from "@/lib/bench";
+import type { RunOverview } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
 import { pauseRunAction, resumeRunAction } from "./actions";
 

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getRunContext, listEvidence } from "@/lib/live-experiment";
+import { getRunContext, listEvidence } from "@/lib/bench";
 import { getBenchSession } from "@/lib/session";
 import RunConsole from "./RunConsole";
 

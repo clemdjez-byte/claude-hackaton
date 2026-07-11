@@ -1,15 +1,13 @@
 // lib/rag.ts — couture hôte : indexation de la mémoire sémantique du lab.
-// Centralise les appels à indexEntry (brique lab-memory, Brique 6) pour que les
-// actions/routes restent lisibles. `indexEntry` n'est pas réexportée par
-// lib/live-experiment/index.ts (surface publique volontairement restreinte) :
-// le code hôte a le droit de l'importer directement depuis la feature.
+// Centralise les appels à indexEntry (lib/retrieval) pour que les actions/routes
+// restent lisibles.
 //
 // Best-effort partout : une indexation qui échoue (flag désactivé, texte vide,
 // erreur de stockage…) ne doit JAMAIS faire échouer l'action utilisateur qui
 // vient de réussir (note capturée, protocole figé, run terminé…). On avale
 // l'erreur et on logge un warning côté serveur.
-import { indexEntry } from "@/lib/live-experiment/features/lab-memory";
-import type { Db, Evidence, Id, Protocol, Run, Step } from "@/lib/live-experiment";
+import { indexEntry } from "@/lib/retrieval";
+import type { Db, Evidence, Id, Protocol, Run, Step } from "@/lib/core";
 import { WS } from "@/lib/session";
 
 async function safeIndex(label: string, run: () => Promise<unknown>): Promise<void> {

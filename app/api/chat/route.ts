@@ -1,12 +1,12 @@
 // Route hôte : chat « Ask your lab », RAG limité au lab courant (Bench). Pas
 // de persistance de threads (YAGNI démo) : l'historique voyage dans le corps
 // de la requête, porté par le client. La clé Claude reste côté serveur. Même
-// pattern NDJSON que la voix (voir app/api/live-experiment/voice/route.ts),
+// pattern NDJSON que la voix (voir app/api/bench/voice/route.ts),
 // avec un vocabulaire d'événements dédié (text_chunk/sources/done/error).
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, type ModelMessage } from "ai";
-import { search } from "@/lib/live-experiment/features/lab-memory";
-import type { MemoryHit } from "@/lib/live-experiment";
+import { search } from "@/lib/retrieval";
+import type { MemoryHit } from "@/lib/core";
 import { getBenchSession, WS } from "@/lib/session";
 
 export const runtime = "nodejs";

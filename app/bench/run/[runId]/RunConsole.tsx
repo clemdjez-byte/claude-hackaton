@@ -3,7 +3,8 @@
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Evidence, RunContext, Step } from "@/lib/live-experiment";
+import type { Evidence, Step } from "@/lib/core";
+import type { RunContext } from "@/lib/bench";
 import { WebcamCapture } from "./WebcamCapture";
 import {
   advanceStepAction,
@@ -17,7 +18,7 @@ import {
 } from "../../actions";
 import { useVoice } from "../../useVoice";
 import { takeSentences } from "../../sentences";
-import type { VoiceLang } from "@/lib/live-experiment";
+import type { VoiceLang } from "@/lib/bench";
 
 type ActiveTimer = { id: number; label: string; remaining: number; running: boolean };
 type CaptureMode = "note" | "measurement" | "deviation" | "photo" | "data";
@@ -259,7 +260,7 @@ export default function RunConsole({
       for (const s of sentences) voice.speakChunk(s);
     };
     try {
-      const res = await fetch("/api/live-experiment/voice", {
+      const res = await fetch("/api/bench/voice", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ runId: run.id, transcript: text, lang: voiceLang }),
@@ -365,7 +366,7 @@ export default function RunConsole({
         fd.append("runId", run.id);
         if (stepId) fd.append("stepId", stepId);
         fd.append("file", f);
-        const res = await fetch("/api/live-experiment/evidence-photo", { method: "POST", body: fd });
+        const res = await fetch("/api/bench/evidence-photo", { method: "POST", body: fd });
         if (!res.ok) {
           const b = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(b.error ?? `Error ${res.status}`);
@@ -390,7 +391,7 @@ export default function RunConsole({
         fd.append("runId", run.id);
         if (stepId) fd.append("stepId", stepId);
         fd.append("file", f);
-        const res = await fetch("/api/live-experiment/evidence-data", { method: "POST", body: fd });
+        const res = await fetch("/api/bench/evidence-data", { method: "POST", body: fd });
         if (!res.ok) {
           const b = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(b.error ?? `Error ${res.status}`);

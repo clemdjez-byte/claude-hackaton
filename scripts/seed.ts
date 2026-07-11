@@ -2,7 +2,7 @@
 // Aucun appel LLM : les 2 protocoles sont écrits en dur (le protocole de
 // référence via seedReferenceProtocol, Bradford ci-dessous à la main) et le
 // rapport passe par le repli hors-ligne déterministe de l'Auto Report si
-// ANTHROPIC_API_KEY est absente (features/auto-report, cf. hasLlmKey()).
+// ANTHROPIC_API_KEY est absente (lib/bench/auto-report, cf. hasLlmKey()).
 //
 // Repartir d'une base propre : `rm -f octopus.db* && npm run seed`.
 //
@@ -10,7 +10,7 @@
 // types nativement (--experimental-strip-types), mais ne résout pas l'alias
 // tsconfig "@/*" utilisé par lib/session.ts et lib/rag.ts (testé : échoue en
 // MODULE_NOT_FOUND) — tsx le fait sans configuration supplémentaire.
-import type { ProtocolDraft } from "@/lib/live-experiment/features/protocol-studio/schema";
+import type { ProtocolDraft } from "@/lib/bench/protocol-studio/schema";
 import {
   seedReferenceProtocol,
   createProtocol,
@@ -25,9 +25,8 @@ import {
   generateReport,
   exportReportMarkdown,
   getRunContext,
-  type Db,
-  type Step,
-} from "@/lib/live-experiment";
+} from "@/lib/bench";
+import type { Db, Step } from "@/lib/core";
 import { getBenchSession, WS, OPERATOR } from "@/lib/session";
 import { indexProtocol, indexRun, indexEvidence, indexReport } from "@/lib/rag";
 

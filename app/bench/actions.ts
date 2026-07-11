@@ -28,7 +28,7 @@ import {
   getRunContext,
   generateReport,
   exportReportMarkdown,
-} from "@/lib/live-experiment";
+} from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
 import { indexProtocol, indexEvidence, indexRun, indexReport } from "@/lib/rag";
 

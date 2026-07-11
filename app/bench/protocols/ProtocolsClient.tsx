@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, unstable_rethrow } from "next/navigation";
-import type { Protocol } from "@/lib/live-experiment/core/types";
+import type { Protocol } from "@/lib/core/types";
 import { generateProtocolAction } from "../actions";
 
 // Types acceptés = ceux que le pipeline d'extraction sait lire (OCR / docx /
@@ -39,7 +39,7 @@ export default function ProtocolsClient({ protocols }: { protocols: Protocol[] }
       const fd = new FormData();
       files.forEach((f) => fd.append("files", f));
       if (brief.trim()) fd.append("context", brief.trim());
-      const res = await fetch("/api/live-experiment/protocol-from-document", {
+      const res = await fetch("/api/bench/protocol-from-document", {
         method: "POST",
         body: fd,
       });

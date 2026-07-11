@@ -1,4 +1,4 @@
-import { listProtocols, seedReferenceProtocol } from "@/lib/live-experiment";
+import { listProtocols, seedReferenceProtocol } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
 import ProtocolsClient from "./ProtocolsClient";
 
