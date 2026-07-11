@@ -20,13 +20,21 @@ npm run seed                   # demo dataset: 2 protocols, 3 runs, 1 report
 npm run dev                    # http://localhost:3000
 ```
 
-Walkthrough: `/` → `/bench/protocols` (library — generate a protocol from a brief or from
-uploaded documents) → open a protocol → **Activate at the bench →** → `/bench/run/[runId]`
-(voice copilot, timers, notes/measurements/deviations/photos) → **Finish & report →** →
-`/bench/report/[runId]` (planned/performed/observed/interpreted, every observation cited)
-→ `/chat` (**Ask your lab** — sourced answers from everything captured so far).
+`/` is the whole app: a desktop shell with a navigable galaxy backdrop, a floating
+toolbar (**Bench / Files / New protocol / Settings**) and an **Ask your lab** dock at
+the bottom. Every surface — protocol library, a protocol, a run, a report, files, chat —
+opens as a draggable/resizable window (float or fullscreen, tabs when several are open),
+not a route.
 
-To reset to a clean demo state: `rm -f octopus.db* && npm run seed`.
+Walkthrough: toolbar **Bench** (library — generate a protocol from a brief or from
+uploaded documents) → open a protocol → **Activate at the bench →** opens the run window
+(voice copilot, timers, notes/measurements/deviations/photos) → **Finish & report →**
+opens the report window (planned/performed/observed/interpreted, every observation
+cited) → toolbar **Files** to reopen any past protocol or report → click a node in the
+galaxy backdrop to open what it represents → the **Ask your lab** dock for sourced
+answers from everything captured so far.
+
+To reset to a clean demo state: `npm run reset && npm run seed`.
 
 ### Without an Anthropic key
 
@@ -74,11 +82,21 @@ lib/retrieval/           semantic lab memory — local embeddings, indexation, s
 lib/session.ts           app seam: fixed workspace (WS = "demo") + operator, resolves the
                         SQLite store, turns the 8 FEATURE_* flags on.
 lib/rag.ts               host seam: indexes protocols/runs/evidence/reports into the
-                        lab memory right after each successful action (best-effort).
-app/                    Next.js App Router — Bench pages, chat, API routes (voice
-                        NDJSON stream, photo/data capture, document import).
+                        lab memory, and links the knowledge-graph edges (run→protocol,
+                        report→run) that feed the galaxy, right after each successful
+                        action (best-effort).
+app/shell/               the desktop shell — a `useWindows` reducer (open/close/focus/
+                        fullscreen, deduped by kind+params), the draggable/resizable
+                        `Window` frame, the galaxy backdrop (canvas, fetches
+                        `/api/galaxy`), the toolbar and the chat dock. `/` (app/page.tsx)
+                        just renders `<Desktop />`.
+app/bench/, app/files/,  the actual panels mounted inside windows (protocol library, a
+app/chat/               protocol, a run console, a report, the files explorer, chat) —
+                        plain React components, no routing.
+app/api/                Next.js API routes consumed by the panels above (voice NDJSON
+                        stream, photo/data capture, document import, galaxy nodes+edges).
 octopus-mcp/             standalone MCP server (stdio) — Claude Code/Desktop can query
-                        the same octopus.db without the Next app running.
+                        the same data/octopus.db without the Next app running.
 ```
 
 See [`docs/DECISIONS.md`](docs/DECISIONS.md) for the "why" behind each choice, and

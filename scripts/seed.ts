@@ -28,7 +28,14 @@ import {
 } from "@/lib/bench";
 import type { Db, Step } from "@/lib/core";
 import { getBenchSession, WS, OPERATOR } from "@/lib/session";
-import { indexProtocol, indexRun, indexEvidence, indexReport } from "@/lib/rag";
+import {
+  indexProtocol,
+  indexRun,
+  indexEvidence,
+  indexReport,
+  linkRunToProtocol,
+  linkReportToRun,
+} from "@/lib/rag";
 
 const BASE_URL = "http://localhost:3000";
 
@@ -189,6 +196,7 @@ async function main(): Promise<void> {
     protocolVersion: ref.version,
     params: { n_reactions: 6, overage_pct: 10 },
   });
+  await linkRunToProtocol(store, runA.run.id, ref.id); // best-effort, cf. lib/rag.ts
 
   await measurement(store, runA.run.id, stepAt(runA.steps, 0).id, {
     name: "Concentration ARN total",
@@ -278,6 +286,7 @@ async function main(): Promise<void> {
     protocolVersion: ref.version,
     params: { n_reactions: 24, overage_pct: 10 },
   });
+  await linkRunToProtocol(store, runB.run.id, ref.id); // best-effort, cf. lib/rag.ts
 
   await measurement(store, runB.run.id, stepAt(runB.steps, 0).id, {
     name: "Concentration ARN total",
@@ -380,6 +389,7 @@ async function main(): Promise<void> {
   const ctxB = await getRunContext(store, runB.run.id);
   const runBCompleted = await completeRun(store, runB.run.id);
   const report = await generateReport(store, runB.run.id); // repli hors-ligne si pas de clé LLM
+  await linkReportToRun(store, report.id, runB.run.id); // best-effort, cf. lib/rag.ts
   if (ctxB) await indexRun(store, runBCompleted, ctxB.protocol.title, ctxB.steps);
   const markdown = await exportReportMarkdown(store, runB.run.id);
   await indexReport(store, report, markdown);
@@ -393,6 +403,7 @@ async function main(): Promise<void> {
     protocolVersion: ref.version,
     params: { n_reactions: 12, overage_pct: 10 },
   });
+  await linkRunToProtocol(store, runC.run.id, ref.id); // best-effort, cf. lib/rag.ts
 
   await measurement(store, runC.run.id, stepAt(runC.steps, 0).id, {
     name: "Concentration ARN total",
@@ -430,14 +441,11 @@ async function main(): Promise<void> {
   console.log(`Runs : 3 (2 complétés, 1 actif) — preuves : ${evA.length + evB.length + evC.length}`);
   console.log(`Rapports générés : 1 (run ${runB.run.id})`);
 
-  console.log("\nURLs à visiter (npm run dev) :");
-  console.log(`  ${BASE_URL}/bench`);
-  console.log(`  ${BASE_URL}/bench/protocols`);
-  console.log(`  ${BASE_URL}/bench/protocols/${ref.id}   (RT-qPCR de référence)`);
-  console.log(`  ${BASE_URL}/bench/protocols/${bradford.id}   (Bradford)`);
-  console.log(`  ${BASE_URL}/bench/run/${runC.run.id}   (run actif à mi-parcours)`);
-  console.log(`  ${BASE_URL}/bench/report/${runB.run.id}   (rapport généré, déviation critique)`);
-  console.log(`  ${BASE_URL}/chat   (« Ask your lab »)`);
+  console.log(`\nOuvre ${BASE_URL}/ (npm run dev) — le bureau Octopus. Depuis la toolbar :`);
+  console.log(`  Bench → protocole « ${ref.title} » (référence) et « ${bradford.title} »`);
+  console.log(`  Bench → run actif à mi-parcours : ${runC.run.id}`);
+  console.log(`  Bench → rapport généré (déviation critique) : run ${runB.run.id}`);
+  console.log(`  Cartouche du bas → « Ask your lab » pour interroger la mémoire du labo`);
 
   store.close();
 }

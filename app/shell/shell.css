@@ -46,6 +46,7 @@
   cursor: grab;
   border-bottom: 1px solid var(--oct-border, #e5e2d8);
   user-select: none;
+  touch-action: none;
 }
 .win-bar.dragging {
   cursor: grabbing;
