@@ -288,10 +288,10 @@ export function htmlToText(html: string): string {
     .replace(/<h3[^>]*>/gi, "\n### ")
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<br\s*\/?>/gi, "\n")
-    // Fermetures de blocs "reconnus" + repli générique pour les blocs non
-    // listés explicitement (cellules/lignes de table notamment : l'éditeur
-    // permet maintenant d'en insérer) — sans ce filet, "<td>A</td><td>B</td>"
-    // devient "AB" au lieu de deux mots séparés.
+    // Fermetures de blocs "reconnus" : liste explicite de tags de bloc, dont
+    // les tags de table (cellules/lignes : l'éditeur permet maintenant d'en
+    // insérer) — sans ça, "<td>A</td><td>B</td>" devient "AB" au lieu de deux
+    // mots séparés.
     .replace(/<\/(h1|h2|h3|p|li|blockquote|div|table|thead|tbody|tfoot|tr|td|th)>/gi, "\n")
     .replace(/<[^>]+>/g, "");
   const decoded = withBreaks

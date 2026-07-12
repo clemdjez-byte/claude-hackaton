@@ -92,6 +92,10 @@ export default function ReportEditor({ runId }: { runId: string }) {
 
   async function handleSign() {
     if (!report || report.signedAt || !htmlRef.current.trim()) return;
+    if (saveState === "error") {
+      setActionError("Last autosave failed — fix your connection and wait for a successful save before signing.");
+      return;
+    }
     setActionError(null);
     await flushSave();
     setBusy(true);
