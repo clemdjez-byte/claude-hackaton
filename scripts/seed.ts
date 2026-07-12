@@ -275,8 +275,13 @@ async function main(): Promise<void> {
 
   const ctxA = await getRunContext(store, runA.run.id);
   const runACompleted = await completeRun(store, runA.run.id);
+  const reportA = await generateReport(store, runA.run.id); // repli hors-ligne si pas de clé LLM
+  await linkReportToRun(store, reportA.id, runA.run.id); // best-effort, cf. lib/rag.ts
   if (ctxA) await indexRun(store, runACompleted, ctxA.protocol.title, ctxA.steps);
+  const markdownA = await exportReportMarkdown(store, runA.run.id);
+  await indexReport(store, reportA, markdownA);
   console.log(`✓ Run complété (propre) : ${runA.run.id} — 6 réactions`);
+  console.log(`✓ Rapport généré : ${reportA.id}`);
 
   // ── Run B : complété, 24 réactions — déviation critique + mesure aberrante
   // (c'est ce run qui reçoit le rapport généré, cf. brief). ────────────────
@@ -388,13 +393,13 @@ async function main(): Promise<void> {
 
   const ctxB = await getRunContext(store, runB.run.id);
   const runBCompleted = await completeRun(store, runB.run.id);
-  const report = await generateReport(store, runB.run.id); // repli hors-ligne si pas de clé LLM
-  await linkReportToRun(store, report.id, runB.run.id); // best-effort, cf. lib/rag.ts
+  const reportB = await generateReport(store, runB.run.id); // repli hors-ligne si pas de clé LLM
+  await linkReportToRun(store, reportB.id, runB.run.id); // best-effort, cf. lib/rag.ts
   if (ctxB) await indexRun(store, runBCompleted, ctxB.protocol.title, ctxB.steps);
-  const markdown = await exportReportMarkdown(store, runB.run.id);
-  await indexReport(store, report, markdown);
+  const markdownB = await exportReportMarkdown(store, runB.run.id);
+  await indexReport(store, reportB, markdownB);
   console.log(`✓ Run complété (déviation critique + mesure aberrante) : ${runB.run.id} — 24 réactions`);
-  console.log(`✓ Rapport généré : ${report.id}`);
+  console.log(`✓ Rapport généré : ${reportB.id}`);
 
   // ── Run C : actif, à mi-parcours (12 réactions) ─────────────────────────
   const runC = await startRun(store, WS, {
@@ -429,6 +434,14 @@ async function main(): Promise<void> {
   if (ctxC) await indexRun(store, ctxC.run, ctxC.protocol.title, ctxC.steps);
   console.log(`✓ Run actif à mi-parcours : ${runC.run.id} — 12 réactions (5/11 étapes faites)`);
 
+  // ── Dossiers de l'explorateur (rangement des rapports) ──────────────────
+  const qpcrFolder = await store.insertFolder({ ws: WS, name: "qPCR runs" });
+  const archiveFolder = await store.insertFolder({ ws: WS, name: "Archive 2024" });
+  await store.setPageFolder(reportB.id, qpcrFolder.id); // déviation critique : rapport à suivre
+  await store.setPageFolder(reportA.id, archiveFolder.id); // run propre : classé
+  console.log(`✓ Dossiers créés : « ${qpcrFolder.name} », « ${archiveFolder.name} »`);
+  console.log(`✓ Rapports rangés : ${reportB.id} → « ${qpcrFolder.name} », ${reportA.id} → « ${archiveFolder.name} »`);
+
   // ── Résumé ───────────────────────────────────────────────────────────
   const [evA, evB, evC] = await Promise.all([
     listEvidence(store, runA.run.id),
@@ -439,12 +452,14 @@ async function main(): Promise<void> {
   console.log("\n— Résumé —");
   console.log(`Protocoles publiés : 2`);
   console.log(`Runs : 3 (2 complétés, 1 actif) — preuves : ${evA.length + evB.length + evC.length}`);
-  console.log(`Rapports générés : 1 (run ${runB.run.id})`);
+  console.log(`Rapports générés : 2 (runs ${runA.run.id}, ${runB.run.id})`);
+  console.log(`Dossiers : 2 (« ${qpcrFolder.name} », « ${archiveFolder.name} ») — 2 rapports rangés`);
 
   console.log(`\nOuvre ${BASE_URL}/ (npm run dev) — le bureau Octopus. Depuis la toolbar :`);
   console.log(`  Bench → protocole « ${ref.title} » (référence) et « ${bradford.title} »`);
   console.log(`  Bench → run actif à mi-parcours : ${runC.run.id}`);
   console.log(`  Bench → rapport généré (déviation critique) : run ${runB.run.id}`);
+  console.log(`  Files → dossiers « ${qpcrFolder.name} » et « ${archiveFolder.name} » avec des rapports rangés`);
   console.log(`  Cartouche du bas → « Ask your lab » pour interroger la mémoire du labo`);
 
   store.close();
