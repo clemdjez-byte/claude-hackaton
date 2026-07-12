@@ -39,7 +39,7 @@ export function WebcamCapture({
     let cancelled = false;
     const media = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
     if (!media?.getUserMedia) {
-      // Capacité navigateur : indétectable au SSR, donc seulement ici (cf. useVoice).
+      // Capacité navigateur : indétectable au SSR, donc seulement ici.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("unsupported");
       return;

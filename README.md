@@ -26,6 +26,13 @@ the bottom. Every surface — protocol library, a protocol, a run, a report, fil
 opens as a draggable/resizable window (float or fullscreen, tabs when several are open),
 not a route.
 
+Voice copilot (real-time, interruptible) — optional but the fun part:
+
+```bash
+brew install livekit            # once — local LiveKit server
+npm run voice                   # in a second terminal, next to `npm run dev`
+```
+
 Walkthrough: toolbar **Bench** (library — generate a protocol from a brief or from
 uploaded documents) → open a protocol → **Activate at the bench →** opens the run window
 (voice copilot, timers, notes/measurements/deviations/photos) → **Finish & report →**
@@ -45,6 +52,23 @@ protocol from a brief or a document, the voice copilot, and the report's prose
 interpretation (Auto Report falls back to a deterministic, no-LLM summary otherwise) and
 the `/chat` answers.
 
+## Voice copilot
+
+The bench run console (the run window) has a hands-free voice copilot: a
+continuous conversation where you can interrupt the assistant mid-sentence
+(barge-in). It is built on [LiveKit Agents](https://github.com/livekit/agents-js)
+running locally:
+
+- **STT** — Deepgram `nova-3` multilingual streaming ([free tier](https://console.deepgram.com))
+- **Brain** — Claude Haiku with the same 10 run-control tools as the UI
+- **TTS** — ElevenLabs `eleven_flash_v2_5` ([free tier](https://elevenlabs.io), set
+  `ELEVEN_VOICE_ID` to pick a voice)
+
+Setup: `brew install livekit`, put `DEEPGRAM_API_KEY` and `ELEVEN_API_KEY` in
+`.env.local`, then run `npm run voice` alongside `npm run dev`. Everything runs
+on your machine (local LiveKit server in dev mode); only STT/TTS/LLM API calls
+leave it. Without these keys, the run console works fine — just without voice.
+
 ## What makes it reliable
 
 - **Lab rigor lives in code.** Every number (master-mix scaling, dilution, unit
@@ -56,8 +80,9 @@ the `/chat` answers.
 - **Portable.** Every brick function takes `db: Db` as its first argument. The demo runs
   on SQLite; the exact same code re-plugs onto a hosted Postgres via another `Db`
   implementation, no business logic touched.
-- **A single LLM layer** (Vercel AI SDK → Claude). No brick talks to a provider SDK
-  directly. Routing: Haiku (voice, latency), Sonnet (protocols), Opus (reports).
+- **A single LLM layer** (Vercel AI SDK → Claude) for the web app. The voice agent talks
+  to Claude via LiveKit's Anthropic plugin; STT and TTS use LiveKit plugins too. Routing:
+  Haiku (voice, latency), Sonnet (protocols), Opus (reports).
 
 ## Stack
 
@@ -93,8 +118,8 @@ app/shell/               the desktop shell — a `useWindows` reducer (open/clos
 app/bench/, app/files/,  the actual panels mounted inside windows (protocol library, a
 app/chat/               protocol, a run console, a report, the files explorer, chat) —
                         plain React components, no routing.
-app/api/                Next.js API routes consumed by the panels above (voice NDJSON
-                        stream, photo/data capture, document import, galaxy nodes+edges).
+app/api/                Next.js API routes consumed by the panels above (voice room
+                        token, photo/data capture, document import, galaxy nodes+edges).
 octopus-mcp/             standalone MCP server (stdio) — Claude Code/Desktop can query
                         the same data/octopus.db without the Next app running.
 ```
