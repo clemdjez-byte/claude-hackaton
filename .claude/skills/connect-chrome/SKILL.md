@@ -1,0 +1,1 @@
+/Users/clementdjezvedjian/Developer/claude-hackaton/.claude/skills/gstack/connect-chrome/SKILL.md

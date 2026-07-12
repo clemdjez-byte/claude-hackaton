@@ -1,0 +1,1 @@
+/Users/clementdjezvedjian/Developer/claude-hackaton/.claude/skills/gstack/land-and-deploy/SKILL.md

@@ -1,0 +1,9 @@
+well,sample,target,type,cdna_uL,mastermix_uL,notes
+A1,,GAPDH,sample,2,18,
+A2,,GAPDH,sample,2,18,
+A3,,GAPDH,sample,2,18,
+A4,,GAPDH,NTC,0,18,eau à la place du cDNA
+B1,,ACTB,sample,2,18,
+B2,,ACTB,sample,2,18,
+B3,,ACTB,sample,2,18,
+B4,,ACTB,NTC,0,18,eau à la place du cDNA
