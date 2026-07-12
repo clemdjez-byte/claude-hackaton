@@ -92,9 +92,10 @@ export default defineAgent({
       stt: new deepgram.STT({ model: "nova-3", language: "multi" }),
       llm: new anthropic.LLM({ model: VOICE_MODEL }),
       // flash_v2_5 : le modèle ElevenLabs le plus rapide, multilingue (fr/en).
+      // Pas de langue forcée : la synthèse suit la langue du texte généré par
+      // Claude (anglais par défaut, français si l'opérateur parle français).
       tts: new elevenlabs.TTS({
         model: "eleven_flash_v2_5",
-        language: "fr",
         ...(process.env.ELEVEN_VOICE_ID ? { voiceId: process.env.ELEVEN_VOICE_ID } : {}),
       }),
       // VAD pur : 100 % local (le détecteur sémantique passe par LiveKit Cloud).
@@ -102,7 +103,9 @@ export default defineAgent({
     });
 
     await session.start({ agent, room: ctx.room });
-    session.say("Copilote prêt.");
+    // Premier message TOUJOURS en anglais (langue par défaut du copilote) ;
+    // il s'adapte ensuite à la langue de l'opérateur (cf. buildSystemPrompt).
+    session.say("Copilot ready.");
   },
 });
 

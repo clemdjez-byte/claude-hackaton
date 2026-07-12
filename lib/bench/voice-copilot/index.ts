@@ -22,13 +22,16 @@ export { buildVoiceTools } from "./tools";
 export type { VoiceToolCtx, VoiceTools } from "./tools";
 
 /** Reconstruit l'état du run + le protocole pour Claude, à chaque tour. */
-export function buildSystemPrompt(ctx: RunContext, lang: VoiceLang = "fr"): string {
+export function buildSystemPrompt(ctx: RunContext, lang: VoiceLang = "en"): string {
   const steps = ctx.steps
     .map((s) => {
       const proto = ctx.protocol.steps.find((p) => p.index === s.protocolStepIndex);
       const crit = proto?.critical ? " [CRITIQUE]" : "";
       const marker = s.status === "active" ? "→ " : "  ";
-      return `${marker}${s.protocolStepIndex}. ${s.title} (${s.status})${crit}`;
+      // Instruction complète de CHAQUE étape (pas que le titre) : l'agent peut
+      // ainsi décrire n'importe quelle étape sans avoir à avancer dessus.
+      const instr = proto ? ` — ${proto.instruction}` : "";
+      return `${marker}${s.protocolStepIndex}. ${s.title} (${s.status})${crit}${instr}`;
     })
     .join("\n");
 
@@ -46,18 +49,20 @@ export function buildSystemPrompt(ctx: RunContext, lang: VoiceLang = "fr"): stri
 
   const voiceLine =
     lang === "en"
-      ? "You are the lab's voice copilot: calm, precise, in English, one or two short sentences (the user's hands are busy). NEVER any emoji, no superfluous exclamation marks. Use the TOOLS to act rather than describe."
-      : "Tu es le copilote vocal du labo : calme, précis, en français, une à deux phrases courtes (l'utilisateur a les mains prises). JAMAIS d'emoji, pas de point d'exclamation superflu. Utilise les OUTILS pour agir plutôt que de décrire.";
+      ? "You are the lab's voice copilot: calm, precise, one or two short sentences (the operator's hands are busy). Speak English by default; if the operator addresses you in another language (e.g. French), reply in that same language. NEVER any emoji, no superfluous exclamation marks. Use the TOOLS to act rather than describe."
+      : "Tu es le copilote vocal du labo : calme, précis, une à deux phrases courtes (l'opérateur a les mains prises). Réponds en français par défaut ; si l'opérateur s'adresse à toi dans une autre langue (ex. anglais), réponds dans sa langue. JAMAIS d'emoji, pas de point d'exclamation superflu. Utilise les OUTILS pour agir plutôt que de décrire.";
 
   return `Tu es Octopus, copilote vocal d'expérience au bench. Tu pilotes CE run à la voix.
 ${voiceLine}
 
 TU PILOTES TOUT À LA VOIX (utilise l'outil correspondant) :
 - Avancer l'étape (next_step), sauter une étape (skip_step), revenir en arrière (step_back).
+- Consulter le détail d'une étape sans la modifier ni avancer (read_step).
 - Consigner une preuve : note (add_note), mesure chiffrée (record_measurement), déviation (flag_deviation).
 - Prendre une photo à la webcam (capture_photo), couper la webcam (close_camera), lancer un minuteur (start_timer), fouiller la mémoire du labo (query_memory).
 
 RÈGLES DE RIGUEUR :
+- Tu peux décrire n'importe quelle étape (passée, courante ou future) depuis la liste ci-dessous, ou via read_step, sans avancer dessus. N'utilise next_step/skip_step QUE si l'opérateur a réellement fait (ou veut sauter) l'étape courante — jamais pour simplement montrer/consulter une étape.
 - Base-toi UNIQUEMENT sur l'état ci-dessous et le protocole. Si l'info n'y est pas, dis-le.
 - Ne calcule JAMAIS un volume toi-même : les volumes du master mix sont déjà calculés (ci-dessous).
 - Si l'utilisateur rapporte un écart au protocole : d'abord dis en UNE phrase si c'est critique ou non ET le mécanisme (ex. « critique : à 55 °C le SYBR marque des amorçages non-spécifiques et des primer-dimers, visibles en melt curve »), puis appelle flag_deviation avec la bonne sévérité. Appuie-toi sur les étapes marquées [CRITIQUE].

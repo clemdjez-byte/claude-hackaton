@@ -67,17 +67,17 @@ describe("buildExecute — outils serveur", () => {
 });
 
 describe("buildAgentTools — intégration avec les vrais outils du cœur", () => {
-  it("mappe les 10 outils du copilote sur un run réel", async () => {
+  it("mappe les 11 outils du copilote sur un run réel", async () => {
     const db = createDb(":memory:");
     const proto = await seedReferenceProtocol(db, "demo");
     const ctx = await startRun(db, "demo", { operator: "op", protocolId: proto.id });
     const aiTools = buildVoiceTools({ db, ws: "demo", runId: ctx.run.id, operator: "op" });
     expect(Object.keys(aiTools).sort()).toEqual([
       "add_note", "capture_photo", "close_camera", "flag_deviation", "next_step",
-      "query_memory", "record_measurement", "skip_step", "start_timer", "step_back",
+      "query_memory", "read_step", "record_measurement", "skip_step", "start_timer", "step_back",
     ]);
     const mapped = buildAgentTools({ db, ws: "demo", runId: ctx.run.id, operator: "op" }, deps());
-    expect(mapped).toHaveLength(10);
+    expect(mapped).toHaveLength(11);
     db.close();
   });
 });

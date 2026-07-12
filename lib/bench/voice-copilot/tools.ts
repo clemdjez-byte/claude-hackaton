@@ -56,6 +56,30 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
       },
     }),
 
+    read_step: tool({
+      description:
+        "Lire/consulter le détail d'une étape (passée, courante ou future) SANS la modifier ni avancer. À utiliser quand l'opérateur veut juste voir ce que contient une étape.",
+      inputSchema: z.object({
+        index: z.number().int().describe("index de l'étape à consulter (0 = première)"),
+      }),
+      // Lecture seule : n'est PAS dans MUTATING_TOOLS (voice-agent/tools.ts) → ne
+      // déclenche aucune resynchro ni validation. C'est le point-clé : montrer une
+      // étape sans marquer les précédentes comme faites.
+      execute: async ({ index }) => {
+        const rc = await getRunContext(ctx.db, ctx.runId);
+        const proto = rc?.protocol.steps.find((p) => p.index === index);
+        if (!proto) return { found: false, index };
+        const runStep = rc?.steps.find((s) => s.protocolStepIndex === index);
+        return {
+          index,
+          title: proto.title,
+          instruction: proto.instruction,
+          status: runStep?.status ?? "pending",
+          critical: proto.critical ?? false,
+        };
+      },
+    }),
+
     capture_photo: tool({
       description:
         "Prendre une photo avec la webcam (ex. « prends une photo du gel »). La capture se fait dans le navigateur ; renvoie juste l'ordre de déclencher.",

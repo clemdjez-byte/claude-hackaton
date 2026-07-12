@@ -32,16 +32,78 @@ describe("Voice Copilot", () => {
     d.close();
   });
 
-  it("le system prompt bascule la consigne de langue en anglais", async () => {
+  it("le system prompt est en anglais par défaut et adaptatif à la langue de l'opérateur", async () => {
     const d = createDb(":memory:");
     const ctx = await seededRun(d);
-    const sysFr = buildSystemPrompt(ctx); // défaut = français
-    const sysEn = buildSystemPrompt(ctx, "en");
-    expect(sysFr).toContain("en français");
-    expect(sysEn).toContain("in English");
-    expect(sysEn).not.toContain("en français");
+    const sysDefault = buildSystemPrompt(ctx); // défaut = anglais désormais
+    expect(sysDefault).toContain("English by default");
+    expect(sysDefault).toContain("reply in that same language"); // adaptativité
+    const sysFr = buildSystemPrompt(ctx, "fr");
+    expect(sysFr).toContain("français");
     // l'état du run reste présent quelle que soit la langue
-    expect(sysEn).toContain("[CRITIQUE]");
+    expect(sysDefault).toContain("[CRITIQUE]");
+    d.close();
+  });
+
+  it("le system prompt inclut l'instruction complète de CHAQUE étape (pas que le titre)", async () => {
+    const d = createDb(":memory:");
+    const ctx = await seededRun(d);
+    const sys = buildSystemPrompt(ctx);
+    // une étape NON courante (index 3) : son instruction complète doit être présente,
+    // pour que l'agent puisse la décrire sans avoir à avancer dessus.
+    const future = ctx.protocol.steps.find((p) => p.index === 3)!;
+    expect(future.instruction.length).toBeGreaterThan(0);
+    expect(sys).toContain(future.instruction);
+    d.close();
+  });
+
+  it("le system prompt interdit d'avancer juste pour montrer une étape", async () => {
+    const d = createDb(":memory:");
+    const ctx = await seededRun(d);
+    const sys = buildSystemPrompt(ctx);
+    expect(sys).toContain("sans avancer");
+    d.close();
+  });
+
+  it("read_step renvoie le détail d'une étape future SANS modifier l'état du run", async () => {
+    const d = createDb(":memory:");
+    const ctx = await seededRun(d);
+    const tools = buildVoiceTools({ db: d, ws: "lab1", runId: ctx.run.id, operator: "u1" });
+
+    const before = (await d.listSteps(ctx.run.id)).map((s) => ({
+      i: s.protocolStepIndex,
+      status: s.status,
+    }));
+
+    const res = (await tools.read_step.execute!({ index: 3 }, opts)) as {
+      index: number;
+      title: string;
+      instruction: string;
+      status: string;
+      critical: boolean;
+    };
+    const proto3 = ctx.protocol.steps.find((p) => p.index === 3)!;
+    expect(res.index).toBe(3);
+    expect(res.title).toBe(proto3.title);
+    expect(res.instruction).toBe(proto3.instruction);
+    expect(res.status).toBe("pending"); // étape future : toujours en attente
+    expect(res.critical).toBe(proto3.critical ?? false);
+
+    // AUCUNE mutation : les statuts sont identiques avant/après.
+    const after = (await d.listSteps(ctx.run.id)).map((s) => ({
+      i: s.protocolStepIndex,
+      status: s.status,
+    }));
+    expect(after).toEqual(before);
+    d.close();
+  });
+
+  it("read_step sur un index inexistant renvoie found:false", async () => {
+    const d = createDb(":memory:");
+    const ctx = await seededRun(d);
+    const tools = buildVoiceTools({ db: d, ws: "lab1", runId: ctx.run.id, operator: "u1" });
+    const res = (await tools.read_step.execute!({ index: 999 }, opts)) as { found: boolean };
+    expect(res.found).toBe(false);
     d.close();
   });
 
