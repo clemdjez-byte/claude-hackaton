@@ -191,22 +191,6 @@ export interface Evidence {
   source?: SourceRef;
 }
 
-export interface ReportCitation {
-  claim: string;
-  evidenceIds: Id[];
-}
-export interface ReportContent {
-  objective: string;
-  planned: string; // ce qui était prévu
-  performed: string; // ce qui a réellement été fait
-  observed: string; // ce qui a été observé
-  interpretation: string; // ce que Octopus interprète (étiqueté comme tel)
-  deviations: string[];
-  openQuestions: string[];
-  nextActions: string[];
-  citations: ReportCitation[];
-}
-
 export type MemorySourceType = "run" | "protocol" | "evidence" | "report";
 export interface MemoryEntry {
   id: Id;

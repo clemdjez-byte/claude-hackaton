@@ -33,12 +33,13 @@ async function runWithEvidence(d: Db) {
 }
 
 describe("Auto Report (repli déterministe, sans LLM)", () => {
-  it("intègre les chiffres déterministes du master mix (264 / 475,2) dans le prévu", async () => {
+  it("intègre les chiffres déterministes du master mix (264 / 475,2) dans le document HTML", async () => {
     const d = createDb(":memory:");
     const runId = await runWithEvidence(d);
     const report = await generateReport(d, runId);
-    expect(report.content.planned).toContain("264");
-    expect(report.content.planned).toContain("475.2");
+    expect(report.html.length).toBeGreaterThan(0);
+    expect(report.html).toContain("264");
+    expect(report.html).toContain("475.2");
     d.close();
   });
 
@@ -46,10 +47,11 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const d = createDb(":memory:");
     const runId = await runWithEvidence(d);
     const report = await generateReport(d, runId);
-    expect(report.content.deviations.some((x) => x.includes("critique") && x.includes("55 °C"))).toBe(true);
-    // 3 evidences → 3 citations, chacune avec un id ev_*
-    expect(report.content.citations.length).toBe(3);
-    expect(report.content.citations.every((c) => c.evidenceIds[0].startsWith("ev_"))).toBe(true);
+    expect(report.html).toContain("critique");
+    expect(report.html).toContain("55 °C");
+    // 3 evidences capturées → 3 ids cités dans l'annexe citations du document.
+    const citedIds = new Set(report.html.match(/ev_[A-Za-z0-9]+/g));
+    expect(citedIds.size).toBe(3);
     d.close();
   });
 
@@ -59,11 +61,20 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     await generateReport(d, runId);
     const again = await getReport(d, runId);
     expect(again).not.toBeNull();
-    expect(again!.content.observed).toContain("SYBR protégé");
-    expect(again!.content.interpretation.toLowerCase()).toContain("valider");
+    expect(again!.html).toContain("SYBR protégé");
+    expect(again!.html.toLowerCase()).toContain("valider");
     const md = await exportReportMarkdown(d, runId);
     expect(md).toContain("# Rapport");
     expect(md).toContain("Réellement fait");
+    d.close();
+  });
+
+  it("repli hors-ligne : exportReportMarkdown régénère le rapport s'il n'existe pas encore", async () => {
+    const d = createDb(":memory:");
+    const runId = await runWithEvidence(d);
+    const md = await exportReportMarkdown(d, runId); // pas de generateReport préalable
+    expect(md.length).toBeGreaterThan(0);
+    expect(md).toContain("# Rapport");
     d.close();
   });
 });

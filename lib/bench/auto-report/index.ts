@@ -11,8 +11,6 @@ import {
   type Evidence,
   type Id,
   type Page,
-  type ReportContent,
-  type ReportCitation,
 } from "@/lib/core";
 import { z } from "zod";
 import { getRunContext, type RunContext } from "../live-bench";
@@ -23,10 +21,33 @@ export interface StoredReport {
   runId: Id;
   protocolTitle: string;
   generatedAt: string;
-  content: ReportContent;
+  html: string; // document éditable (rendu initial des faits)
+  signedAt?: string; // signature ELN (Task 3)
+  signedBy?: string;
 }
 
-type ReportPageContent = { runId: Id; protocolTitle: string; generatedAt: string } & ReportContent;
+// Contenu stocké dans `Page.content` pour une page de type 'report'.
+type ReportPageMeta = Omit<StoredReport, "id">;
+
+// Citation locale à la brique (pas de type stocké : les faits ne sont plus
+// persistés qu'une fois rendus en HTML, cf. renderHtml).
+interface Citation {
+  claim: string;
+  evidenceIds: Id[];
+}
+
+// Faits déterministes assemblés avant rendu (jamais stockés tels quels).
+interface ReportFacts {
+  objective: string;
+  planned: string;
+  performed: string;
+  observed: string;
+  interpretation: string;
+  deviations: string[];
+  openQuestions: string[];
+  nextActions: string[];
+  citations: Citation[];
+}
 
 const NarrativeSchema = z.object({
   interpretation: z
@@ -50,7 +71,7 @@ export async function generateReport(db: Db, runId: Id): Promise<StoredReport> {
 
   const narrative = await buildNarrative({ ctx, planned, performed, observed, deviations });
 
-  const content: ReportContent = {
+  const facts: ReportFacts = {
     objective: ctx.protocol.summary ?? ctx.protocol.title,
     planned,
     performed,
@@ -62,16 +83,15 @@ export async function generateReport(db: Db, runId: Id): Promise<StoredReport> {
     citations,
   };
 
-  const pageContent: ReportPageContent = {
-    runId,
-    protocolTitle: ctx.protocol.title,
-    generatedAt: new Date().toISOString(),
-    ...content,
-  };
+  const protocolTitle = ctx.protocol.title;
+  const generatedAt = new Date().toISOString();
+  const html = renderHtml({ protocolTitle, generatedAt, runId }, facts);
+
+  const pageContent: ReportPageMeta = { runId, protocolTitle, generatedAt, html };
   const page = await db.insertPage({
     ws: ctx.run.ws,
     type: "report",
-    title: `Rapport: ${ctx.protocol.title}`,
+    title: `Rapport: ${protocolTitle}`,
     content: pageContent,
   });
   return toStored(page);
@@ -89,10 +109,11 @@ export async function getReport(db: Db, runId: Id): Promise<StoredReport | null>
   return match ?? null;
 }
 
+/** Texte (markdown-ish) dérivé du document HTML — export + repli d'affichage. */
 export async function exportReportMarkdown(db: Db, runId: Id): Promise<string> {
   assertEnabled("autoReport");
   const report = (await getReport(db, runId)) ?? (await generateReport(db, runId));
-  return renderMarkdown(report);
+  return htmlToText(report.html);
 }
 
 // ── Assemblage déterministe des faits ──────────────────────────────────
@@ -152,7 +173,7 @@ function buildDeviations(evidence: Evidence[]): string[] {
     });
 }
 
-function buildCitations(evidence: Evidence[]): ReportCitation[] {
+function buildCitations(evidence: Evidence[]): Citation[] {
   return evidence.map((e) => ({
     claim: claimForEvidence(e),
     evidenceIds: [e.id],
@@ -207,31 +228,85 @@ Produis: interpretation (prose), openQuestions (questions ouvertes), nextActions
   });
 }
 
-// ── Rendu markdown ──────────────────────────────────────────────────────
-function renderMarkdown(r: StoredReport): string {
-  const c = r.content;
-  const section = (title: string, body: string) => `## ${title}\n\n${body}\n`;
+// ── Rendu HTML (document Tiptap-compatible) ─────────────────────────────
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Bloc texte multi-lignes (les `\n` des build* deviennent des `<br>`). */
+function textBlockHtml(text: string): string {
+  return `<p>${text.split("\n").map(escapeHtml).join("<br>")}</p>`;
+}
+
+function listHtml(items: string[], empty: string): string {
+  if (items.length === 0) return `<p>${escapeHtml(empty)}</p>`;
+  return `<ul>${items.map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>`;
+}
+
+function citationsHtml(citations: Citation[]): string {
+  if (citations.length === 0) return "<p>Aucune.</p>";
+  return `<ul>${citations
+    .map((ci) => `<li>« ${escapeHtml(ci.claim)} » → ${escapeHtml(ci.evidenceIds.join(", "))}</li>`)
+    .join("")}</ul>`;
+}
+
+function sectionHtml(title: string, bodyHtml: string): string {
+  return `<h2>${escapeHtml(title)}</h2>\n${bodyHtml}`;
+}
+
+/** Même contenu que l'ancien renderMarkdown, mais en HTML éditable (Tiptap). */
+function renderHtml(meta: { protocolTitle: string; generatedAt: string; runId: Id }, f: ReportFacts): string {
   return [
-    `# Rapport: ${r.protocolTitle}`,
-    `_Généré le ${r.generatedAt} · run ${r.runId}_\n`,
-    `> Prévu / réellement fait / observé / interprété. Chaque observation est sourcée.\n`,
-    section("Objectif", c.objective),
-    section("Prévu", c.planned),
-    section("Réellement fait", c.performed),
-    section("Observé", c.observed),
-    section("Déviations", c.deviations.length ? c.deviations.map((d) => `- ${d}`).join("\n") : "Aucune."),
-    section("Interprétation (à valider)", c.interpretation),
-    section("Questions ouvertes", c.openQuestions.map((q) => `- ${q}`).join("\n") || "Aucune."),
-    section("Prochaines actions", c.nextActions.map((a) => `- ${a}`).join("\n") || "Aucune."),
-    section("Annexe: citations", c.citations.map((ci) => `- « ${ci.claim} » → ${ci.evidenceIds.join(", ")}`).join("\n") || "Aucune."),
+    `<h1>Rapport: ${escapeHtml(meta.protocolTitle)}</h1>`,
+    `<p><em>Généré le ${escapeHtml(meta.generatedAt)} · run ${escapeHtml(meta.runId)}</em></p>`,
+    `<blockquote><p>Prévu / réellement fait / observé / interprété. Chaque observation est sourcée.</p></blockquote>`,
+    sectionHtml("Objectif", textBlockHtml(f.objective)),
+    sectionHtml("Prévu", textBlockHtml(f.planned)),
+    sectionHtml("Réellement fait", textBlockHtml(f.performed)),
+    sectionHtml("Observé", textBlockHtml(f.observed)),
+    sectionHtml("Déviations", listHtml(f.deviations, "Aucune.")),
+    sectionHtml("Interprétation (à valider)", textBlockHtml(f.interpretation)),
+    sectionHtml("Questions ouvertes", listHtml(f.openQuestions, "Aucune.")),
+    sectionHtml("Prochaines actions", listHtml(f.nextActions, "Aucune.")),
+    sectionHtml("Annexe: citations", citationsHtml(f.citations)),
   ].join("\n");
+}
+
+/** Texte lisible (markdown-ish) dérivé du HTML — suffisant pour l'export et
+ *  l'indexation lab-memory (bag-of-words) ; pas un vrai parseur HTML. */
+export function htmlToText(html: string): string {
+  const withBreaks = html
+    .replace(/<h1[^>]*>/gi, "\n# ")
+    .replace(/<h2[^>]*>/gi, "\n## ")
+    .replace(/<h3[^>]*>/gi, "\n### ")
+    .replace(/<li[^>]*>/gi, "\n- ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(h1|h2|h3|p|li|blockquote|div)>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  const decoded = withBreaks
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+  return decoded
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
 function toStored(page: Page): StoredReport {
-  const c = page.content as ReportPageContent;
-  const { runId, protocolTitle, generatedAt, ...content } = c;
-  return { id: page.id, runId, protocolTitle, generatedAt, content };
+  const c = page.content as ReportPageMeta;
+  return { id: page.id, ...c };
 }
 
 function stepDurationMin(start?: string, end?: string): number | null {
