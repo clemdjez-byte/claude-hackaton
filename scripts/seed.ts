@@ -183,9 +183,10 @@ export async function seedKnowledgeGraph(store: Db): Promise<void> {
     if (spec.metric) await captureMeasurement(store, run.id, undefined, spec.metric, OPERATOR);
     const completed = await completeRun(store, run.id);
     await generateReport(store, run.id); // rapport (repli déterministe hors-ligne si pas de clé)
-    const outcome = await saveOutcome(store, { ws, runId: run.id, verdict: spec.verdict, metric: spec.metric, reason: spec.reason });
+    // Enregistre le verdict (source empirique) ; indexRunGraph le RÉUTILISE ensuite.
+    await saveOutcome(store, { ws, runId: run.id, verdict: spec.verdict, metric: spec.metric, reason: spec.reason });
     await indexRun(store, completed, staining.title, steps); // RAG (ancrage chat)
-    await indexRunGraph(store, completed, steps, staining, outcome); // extraction IA du run
+    await indexRunGraph(store, completed, steps, staining); // extraction IA du run (chiffré + ouvert)
     n += 1;
   }
   console.log(`✓ ${n} runs de marquage (verdicts saisis, graphe extrait par IA)`);
@@ -213,9 +214,9 @@ export async function seedKnowledgeGraph(store: Db): Promise<void> {
   );
   const eCompleted = await completeRun(store, eRun.id);
   await generateReport(store, eRun.id);
-  const eOutcome = await saveOutcome(store, { ws, runId: eRun.id, verdict: "failure", reason: "confluence" });
+  await saveOutcome(store, { ws, runId: eRun.id, verdict: "failure", reason: "confluence" });
   await indexRun(store, eCompleted, expansion.title, eSteps);
-  await indexRunGraph(store, eCompleted, eSteps, expansion, eOutcome);
+  await indexRunGraph(store, eCompleted, eSteps, expansion);
   console.log(`✓ Protocole publié : « ${expansion.title} » + 1 run (croisement cell_density)`);
 }
 

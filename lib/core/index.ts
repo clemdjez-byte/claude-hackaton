@@ -27,6 +27,7 @@ export type {
   NewOutcome,
   NewFailureMode,
   NewParameterType,
+  NewKgEntity,
 } from "./db";
 export { createDb, getDb } from "./sqlite";
 

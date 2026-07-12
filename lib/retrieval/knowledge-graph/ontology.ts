@@ -1,7 +1,10 @@
-// lib/live-experiment/features/knowledge-graph/ontology.ts — source unique de vérité
-// de l'ontologie du KG : types de nœuds, noms de relations, vocabulaire canonique
-// des ParameterType et normalisation d'alias. Le dériveur (derive.ts) ET l'extracteur
-// (extract.ts) s'y réfèrent → cohérence garantie entre les producteurs d'arêtes.
+// lib/retrieval/knowledge-graph/ontology.ts — source unique de vérité de
+// l'ontologie du KG : types de nœuds « noyau », noms de relations « noyau »,
+// vocabulaire canonique des ParameterType et normalisation d'alias. Les
+// producteurs d'arêtes (couture hôte lib/kg.ts) et l'extracteur ouvert
+// (extract.ts + resolve.ts) s'y réfèrent → cohérence garantie. En ontologie
+// OUVERTE, l'IA peut créer de nouveaux types/relations hors de ces constantes ;
+// `canonicalKey` sert alors à réconcilier les entités par une clé normalisée.
 // Module PUR : aucun `db`, aucun LLM, aucun effet de bord.
 
 export type KgNode = { type: string; id: string };
@@ -89,7 +92,7 @@ export const PARAMETER_TYPES: SeedParameterType[] = [
 ];
 
 /** Minuscule + sans accents + espaces compactés : base de comparaison des alias. */
-function fold(s: string): string {
+export function fold(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
@@ -129,7 +132,7 @@ export function violatesThreshold(
 }
 
 /** Slug canonique : minuscule, sans accents, non-alphanumérique → « _ ». */
-function slug(name: string): string {
+export function slug(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")
@@ -146,4 +149,15 @@ export function reagentKey(name: string): string {
 /** Clé canonique d'une lignée cellulaire. */
 export function cellLineKey(name: string): string {
   return slug(name);
+}
+
+/** Clé canonique GÉNÉRIQUE d'une entité de l'ontologie ouverte. Les facettes
+ *  chiffrées (parameter/measurement) passent par le vocabulaire canonique des
+ *  ParameterType s'il les connaît (pour retomber sur le hub du noyau chiffré),
+ *  sinon slug ; toutes les autres facettes (reagent, instrument, operator,
+ *  sample, date…) sont simplement sluggées. Deux libellés qui se sluggent pareil
+ *  → même nœud (réconciliation de base ; la résolution in-context fait le reste). */
+export function canonicalKey(type: string, raw: string): string {
+  if (type === "parameter" || type === "measurement") return normalizeParamKey(raw) ?? slug(raw);
+  return slug(raw);
 }

@@ -3,8 +3,9 @@
 // chiffrés et sourçables : pour chaque run, ses paramètres + verdict + les
 // FailureModes attribués ; et les facteurs d'échec PARTAGÉS entre protocoles
 // (via les hubs ParameterType). renderGraphFacts en fait un bloc pour le prompt.
-import { assertEnabled, type Db, type FailureMode, type Id, type ThresholdOperator, type Verdict, type Ws } from "@/lib/core";
+import { assertEnabled, type Db, type FailureMode, type Id, type KgEdge, type ThresholdOperator, type Verdict, type Ws } from "@/lib/core";
 import { REL, type KgNode } from "./ontology";
+import { subgraph } from "./index";
 
 export interface RunFact {
   runId: Id;
@@ -137,4 +138,55 @@ export function renderGraphFacts(facts: GraphFacts): string {
     );
   }
   return lines.join("\n");
+}
+
+// ── Voie GÉNÉRIQUE (ontologie ouverte) ──────────────────────────────────────
+// Le noyau chiffré ci-dessus ne connaît qu'une poignée de relations. Cette passe
+// rend TOUS les autres triplets autour des ancres — y compris ceux d'un type/
+// relation inventé par l'IA — via le moteur générique subgraph(). Les relations
+// « noyau » en sont exclues (déjà rendues par renderGraphFacts, pas de doublon).
+
+const CORE_RELATIONS = new Set<string>([REL.instanceOf, REL.hasValue, REL.resultedIn, REL.attributedTo]);
+const GENERIC_CAP = 60; // borne le bloc pour ne pas exploser le prompt
+const MIN_CONFIDENCE = 0.5;
+
+/** Collecte les arêtes ouvertes atteignables depuis les ancres (BFS profondeur
+ *  `depth`), hors relations « noyau », dédupliquées par id et bornées. */
+export async function collectGenericFacts(
+  db: Db,
+  ws: Ws,
+  anchors: KgNode[],
+  depth = 2
+): Promise<KgEdge[]> {
+  assertEnabled("knowledgeGraph");
+  const byId = new Map<Id, KgEdge>();
+  for (const a of anchors) {
+    const { edges } = await subgraph(db, ws, a, depth);
+    for (const e of edges) {
+      if (CORE_RELATIONS.has(e.relation)) continue;
+      if ((e.confidence ?? 1) < MIN_CONFIDENCE) continue;
+      byId.set(e.id, e);
+    }
+  }
+  return [...byId.values()].slice(0, GENERIC_CAP);
+}
+
+/** Table `type:id → label` pour rendre les tags lisibles (nœuds ouverts +
+ *  vocabulaire de paramètres). Best-effort : un tag sans label reste citable. */
+export async function loadLabels(db: Db, ws: Ws): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  for (const e of await db.listKgEntities(ws)) labels.set(`${e.type}:${e.key}`, e.label);
+  for (const p of await db.listParameterTypes(ws)) labels.set(`parameter_type:${p.key}`, p.label);
+  return labels;
+}
+
+/** Bloc texte des faits ouverts : « [type:id] "label" —relation→ [type:id] ». Les
+ *  tags [type:id] restent citables comme dans le noyau chiffré. */
+export function renderGenericFacts(edges: KgEdge[], labels: Map<string, string>): string {
+  if (edges.length === 0) return "";
+  const tag = (type: string, id: string) => {
+    const label = labels.get(`${type}:${id}`);
+    return label && label.toLowerCase() !== id.toLowerCase() ? `[${type}:${id}] "${label}"` : `[${type}:${id}]`;
+  };
+  return edges.map((e) => `${tag(e.fromType, e.fromId)} —${e.relation}→ ${tag(e.toType, e.toId)}`).join("\n");
 }

@@ -263,6 +263,25 @@ export interface ParameterType {
   createdAt: string;
 }
 
+/** Nœud canonique GÉNÉRIQUE de l'ontologie ouverte : registre partagé des
+ *  entités objectives extraites par l'IA (réactif, instrument, opérateur,
+ *  échantillon, date…). Généralise ParameterType à des `type` libres. La clé
+ *  d'identité est `(ws, type, key)` : un même concept revu sous un autre libellé
+ *  retombe sur la même ligne (réconciliation d'alias). NE stocke pas le contenu
+ *  d'entités déjà tabulées ailleurs (protocol/run/report) : c'est un hub, pas un
+ *  double. Le `type` reste un texte libre (comme fromType/toType sur kg_edge). */
+export interface KgEntity {
+  ws: Ws;
+  type: string; // facette objective : reagent | instrument | operator | sample | date | …
+  key: string; // clé canonique (slug/normalisée)
+  label: string; // libellé lisible tel qu'écrit
+  aliases: string[]; // libellés alternatifs reconnus (union au fil des extractions)
+  attrs?: Record<string, unknown>;
+  provenance?: EdgeProvenance; // défaut 'extracted' (créé par l'IA)
+  confidence?: number; // défaut 1.0
+  createdAt: string;
+}
+
 // ── Port LLM (contrat consommé par lib/core/llm.ts) ───────────────────────
 // Le cœur ne parle jamais à un SDK fournisseur en direct : il passe par un
 // provider qui implémente cette interface. Un seul point d'injection permet

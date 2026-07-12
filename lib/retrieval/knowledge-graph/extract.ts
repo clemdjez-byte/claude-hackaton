@@ -1,11 +1,13 @@
-// lib/live-experiment/features/knowledge-graph/extract.ts — la « pincée LLM » d'A+.
-// Extrait des protocoles l'ontologie que le structuré ne contient pas : les
-// ParameterTypes, réactifs, lignées cellulaires et FailureModes (numériques,
-// cachés dans les ⚠️, ET qualitatifs sans seuil chiffré). Le LLM ne fait QUE
-// de l'extraction textuelle (aucun calcul de nombre). Fail-closed : sans clé,
-// renvoie des listes vides et laisse le peuplement déterministe (derive.ts)
-// assurer. En B, ce même module sera étendu au texte libre (cahiers de labo)
-// — même sortie, même couture.
+// lib/retrieval/knowledge-graph/extract.ts — extraction IA du KG. Deux registres :
+//  1) NOYAU CHIFFRÉ (extractProtocolOntology / extractRunOntology) : structure ce
+//     que le déterministe ne contient pas — ParameterTypes, réactifs, lignées,
+//     FailureModes (numériques cachés dans les ⚠️ ET qualitatifs) + le verdict du
+//     run. Alimente le raisonnement seuils/verdicts/recoupements de query.ts.
+//  2) ONTOLOGIE OUVERTE (extractOpenGraph) : l'IA crée de NOUVEAUX types de nœuds
+//     et de relations, bornés à des facettes OBJECTIVES (jamais d'interprétation).
+// Dans les deux cas le LLM ne fait QUE de l'extraction textuelle (aucun calcul de
+// nombre) et fail-closed : sans clé, renvoie des listes vides. Le peuplement
+// déterministe restant (CITES, liens run↔protocole) vit dans la couture lib/kg.ts.
 import { z } from "zod";
 import { generateObjectFor, hasLlmKey, type Protocol } from "@/lib/core";
 import type { Evidence, Run, ThresholdOperator, Verdict } from "@/lib/core";
@@ -114,9 +116,13 @@ export interface RunExtraction {
   reagents: string[];
   cellLines: string[];
   causes: Array<{ trigger?: string; paramTypeKey?: string; mechanism: string; verdict: Verdict }>;
+  verdict: Verdict | null; // verdict du run LU dans le rapport (null s'il n'y est pas écrit)
 }
 
 const RunSchema = z.object({
+  // Verdict scientifique du run, UNIQUEMENT s'il est écrit dans le rapport
+  // (« échec : pas de bandes », « réussi »…). null si le texte ne le dit pas.
+  verdict: z.enum(["success", "failure", "partial"]).nullable().default(null),
   paramValues: z.array(z.object({ paramLabel: z.string(), value: z.number(), unit: z.string() })).default([]),
   reagents: z.array(z.string()).default([]),
   cellLines: z.array(z.string()).default([]),
@@ -130,6 +136,7 @@ const RunSchema = z.object({
 
 const RUN_SYSTEM = `Tu STRUCTURES un run de laboratoire déjà réalisé, à partir des FAITS fournis. Règles absolues :
 - N'utilise QUE des nombres présents dans les FAITS (mesures, notes). N'en calcule ni n'en invente AUCUN.
+- verdict : le résultat scientifique du run UNIQUEMENT s'il est écrit dans le rapport (success / failure / partial). Si le texte ne dit rien du résultat, renvoie verdict: null. Ne le DÉDUIS pas.
 - paramValues : les valeurs de paramètres réellement appliquées, lues dans les faits (paramLabel lisible + value + unit).
 - reagents / cellLines : réactifs et lignées effectivement utilisés, mentionnés dans les faits.
 - causes : UNIQUEMENT les causes que LE CHERCHEUR a écrites (ses notes, la raison d'une déviation, la raison du verdict).
@@ -162,7 +169,7 @@ export async function extractRunOntology(
   report: StoredReport | null,
   evidence: Evidence[]
 ): Promise<RunExtraction> {
-  if (!hasLlmKey()) return { paramValues: [], reagents: [], cellLines: [], causes: [] };
+  if (!hasLlmKey()) return { paramValues: [], reagents: [], cellLines: [], causes: [], verdict: null };
 
   const raw = await generateObjectFor("report", {
     system: RUN_SYSTEM,
@@ -185,5 +192,89 @@ export async function extractRunOntology(
     reagents: [...new Set(raw.reagents.map(reagentKey))],
     cellLines: [...new Set(raw.cellLines.map(cellLineKey))],
     causes,
+    verdict: raw.verdict,
   };
+}
+
+// ── extractOpenGraph — ontologie OUVERTE (entités objectives + triplets) ─────
+// L'IA crée de NOUVEAUX types de nœuds et relations, mais bornés à des facettes
+// OBJECTIVES (enum ci-dessous) : jamais un nœud d'interprétation. Sert au texte
+// d'un protocole comme au rapport signé d'un run. La sortie est réconciliée puis
+// écrite par resolve.ts. Fail-closed sans clé LLM.
+
+/** Facettes de nœud autorisées : uniquement des catégories OBJECTIVES. Toute
+ *  facette d'interprétation est volontairement absente (verrou anti-hypothèse). */
+const OpenGraphSchema = z.object({
+  entities: z.array(z.object({
+    id: z.string(), // id temporaire local ("e1"…) référencé par les triplets
+    type: z.enum([
+      "material", "reagent", "cell_line", "sample", "equipment", "instrument",
+      "parameter", "measurement", "date", "operator", "protocol", "run",
+      "outcome", "publication",
+    ]),
+    label: z.string(),
+    aliases: z.array(z.string()).default([]),
+    value: z.number().nullable().default(null), // chiffre RECOPIÉ (parameter/measurement)
+    unit: z.string().nullable().default(null),
+  })).default([]),
+  triplets: z.array(z.object({
+    subject: z.string(), relation: z.string(), object: z.string(), // ids d'entités ; relation snake_case libre
+  })).default([]),
+});
+export type OpenGraph = z.infer<typeof OpenGraphSchema>;
+
+/** Entité déjà connue du registre, montrée à l'IA pour qu'elle la réutilise. */
+export interface KnownEntity { type: string; key: string; label: string; aliases: string[] }
+
+const OPEN_SYSTEM = `Tu construis un GRAPHE DE CONNAISSANCES à partir d'un texte de laboratoire (protocole ou rapport de run).
+Tu extrais UNIQUEMENT des éléments FACTUELS et OBJECTIFS présents dans le texte, sous forme d'ENTITÉS + de LIENS (triplets).
+
+ENTITÉS — chacune : un id temporaire local (e1, e2…), un type (facette), un label lisible, des alias éventuels.
+- Facettes autorisées : material, reagent, cell_line, sample, equipment, instrument, parameter, measurement, date, operator, protocol, run, outcome, publication.
+- Valeur chiffrée (parameter/measurement) : renseigne value + unit TELS QU'ÉCRITS. Ne calcule ni n'invente AUCUN nombre.
+- INTERDIT : créer une entité d'INTERPRÉTATION (cause probable, hypothèse, recommandation, tendance, risque, conclusion personnelle). Si ce n'est pas un objet/fait concret nommé dans le texte, ne le crée pas.
+
+TRIPLETS — des liens FACTUELS ÉNONCÉS entre deux entités (par leur id) : { subject, relation, object }.
+- relation : un verbe court en snake_case (uses, measured, performed_by, performed_on, cites, derived_from, has_value…).
+- N'infère AUCUN lien causal non écrit. Les causes/mécanismes ne sont repris que si le chercheur les a ÉCRITS.
+
+RÉUTILISATION : si le texte désigne une entité listée dans ENTITÉS CONNUES, reprends son label exact (ne crée pas un doublon).
+Si le texte ne contient aucun fait exploitable, renvoie des listes vides.`;
+
+function knownBlock(known: KnownEntity[]): string {
+  if (!known.length) return "";
+  const lines = known.map(
+    (e) => `- [${e.type}] ${e.label}${e.aliases.length ? ` (alias: ${e.aliases.join(", ")})` : ""}`
+  );
+  return `ENTITÉS CONNUES (réutilise-les si le texte les désigne) :\n${lines.join("\n")}\n\n`;
+}
+
+/** Extrait un graphe ouvert (entités objectives + triplets) d'un texte libre.
+ *  `task` route le modèle ("protocol"→Sonnet, "report"→Opus). Fail-closed. */
+export async function extractOpenGraph(
+  text: string,
+  known: KnownEntity[],
+  task: "protocol" | "report"
+): Promise<OpenGraph> {
+  if (!hasLlmKey()) return { entities: [], triplets: [] };
+  return generateObjectFor(task, {
+    system: OPEN_SYSTEM,
+    prompt: `${knownBlock(known)}TEXTE :\n${text}`,
+    schema: OpenGraphSchema,
+  });
+}
+
+/** Graphe ouvert d'un protocole (texte des étapes). Réutilise `protocolText`. */
+export function extractProtocolOpenGraph(protocol: Protocol, known: KnownEntity[]): Promise<OpenGraph> {
+  return extractOpenGraph(protocolText(protocol), known, "protocol");
+}
+
+/** Graphe ouvert d'un run terminé (rapport + preuves). Réutilise `runFacts`. */
+export function extractRunOpenGraph(
+  protocol: Protocol,
+  report: StoredReport | null,
+  evidence: Evidence[],
+  known: KnownEntity[]
+): Promise<OpenGraph> {
+  return extractOpenGraph(`PROTOCOLE : ${protocol.title}\n\nFAITS DU RUN :\n${runFacts(report, evidence)}`, known, "report");
 }

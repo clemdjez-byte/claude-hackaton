@@ -8,7 +8,7 @@ import { streamText, type ModelMessage } from "ai";
 import { search } from "@/lib/retrieval";
 import type { MemoryHit } from "@/lib/core";
 import { getBenchSession, WS } from "@/lib/session";
-import { collectGraphFacts, renderGraphFacts } from "@/lib/retrieval/knowledge-graph/query";
+import { collectGraphFacts, renderGraphFacts, collectGenericFacts, renderGenericFacts, loadLabels } from "@/lib/retrieval/knowledge-graph/query";
 import { NODE, type KgNode } from "@/lib/retrieval/knowledge-graph/ontology";
 
 export const runtime = "nodejs";
@@ -28,13 +28,26 @@ function isChatMessage(m: unknown): m is ChatMessage {
   );
 }
 
-/** Mappe les hits du RAG (mémoire) en nœuds d'ancrage du graphe. Seuls les runs
- *  et protocoles sont des points d'entrée de traversée (evidence/report non). */
-export function hitsToAnchors(hits: Array<{ sourceType: string; sourceId: string }>): KgNode[] {
+/** Mappe les hits du RAG (mémoire) en nœuds d'ancrage du graphe. Runs et
+ *  protocoles sont des ancres directes ; un hit rapport/preuve est rattaché à
+ *  SON run (via meta.runId), pour élargir les points d'entrée de traversée. Les
+ *  ancres run/protocole suffisent : les nœuds ouverts (instrument, opérateur…)
+ *  y sont reliés par l'indexation (voir resolve.ts), donc atteignables en BFS. */
+export function hitsToAnchors(
+  hits: Array<{ sourceType: string; sourceId: string; meta?: Record<string, unknown> }>
+): KgNode[] {
   const anchors: KgNode[] = [];
+  const seen = new Set<string>();
+  const add = (node: KgNode) => {
+    const k = `${node.type}:${node.id}`;
+    if (!seen.has(k)) { seen.add(k); anchors.push(node); }
+  };
   for (const h of hits) {
-    if (h.sourceType === "run") anchors.push(NODE.run(h.sourceId));
-    else if (h.sourceType === "protocol") anchors.push(NODE.protocol(h.sourceId));
+    if (h.sourceType === "run") add(NODE.run(h.sourceId));
+    else if (h.sourceType === "protocol") add(NODE.protocol(h.sourceId));
+    else if ((h.sourceType === "report" || h.sourceType === "evidence") && typeof h.meta?.runId === "string") {
+      add(NODE.run(h.meta.runId as string));
+    }
   }
   return anchors;
 }
@@ -48,7 +61,7 @@ function buildSystemPrompt(hits: MemoryHit[], graphBlock: string): string {
   return `You are the Octopus lab copilot for Bench, the wet-lab notebook. You answer questions about THIS lab's work using ONLY the context below.
 
 You are given TWO context blocks:
-- GRAPH FACTS: structured, quantitative facts derived from this lab's runs (parameters, verdicts, and documented failure modes with thresholds). Prefer these for any quantitative or aggregate claim (e.g. "the successes cluster at 60–62 °C", "3 of 4 failures violated a documented threshold").
+- GRAPH FACTS: structured facts derived from this lab's runs. Two kinds: (1) quantitative lines (parameters, verdicts, documented failure modes with thresholds) — prefer these for any quantitative or aggregate claim (e.g. "3 of 4 failures violated a documented threshold"); (2) open triples of the form [type:id] "label" —relation→ [type:id] extracted from lab notes (e.g. which instrument, operator, sample or date a run involved). Use the triples for factual "which/who/what" questions.
 - TEXT EXCERPTS: free-text chunks retrieved from lab memory (protocols, runs, evidence, reports).
 
 Rules:
@@ -98,11 +111,20 @@ export async function POST(req: Request) {
         const hits = await search(store, WS, lastUser.content.trim(), HIT_COUNT);
 
         // Voie graphe : les hits servent d'ancres. Best-effort (ne bloque pas le chat).
-        let graphBlock = "(Aucun fait de graphe pour ces entités.)";
+        // Deux passes fusionnées : le noyau chiffré (verdicts/seuils/recoupements)
+        // + les triplets ouverts (relations libres extraites du texte).
+        let graphBlock = "(No graph facts for these entities.)";
         try {
-          const facts = await collectGraphFacts(store, WS, hitsToAnchors(hits));
-          graphBlock = renderGraphFacts(facts);
-          send({ type: "graph", facts });
+          const anchors = hitsToAnchors(hits);
+          const facts = await collectGraphFacts(store, WS, anchors);
+          const generic = await collectGenericFacts(store, WS, anchors);
+          const labels = await loadLabels(store, WS);
+          const parts: string[] = [];
+          if (facts.runs.length) parts.push(renderGraphFacts(facts));
+          const genericStr = renderGenericFacts(generic, labels);
+          if (genericStr) parts.push(genericStr);
+          if (parts.length) graphBlock = parts.join("\n");
+          send({ type: "graph", facts, generic: generic.length });
         } catch (e) {
           console.warn("[chat] collecte graphe échouée (best-effort) :", e);
         }

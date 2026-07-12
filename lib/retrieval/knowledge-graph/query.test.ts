@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createDb } from "@/lib/core";
 import { link } from "./index";
 import { NODE, REL } from "./ontology";
-import { collectGraphFacts, renderGraphFacts } from "./query";
+import { collectGraphFacts, renderGraphFacts, collectGenericFacts, renderGenericFacts, loadLabels } from "./query";
 import type { Db } from "@/lib/core";
 
 beforeEach(() => { process.env.FEATURE_KNOWLEDGE_GRAPH = "true"; });
@@ -89,6 +89,39 @@ describe("query", () => {
     expect(text).toContain("PBS au lieu du milieu");
     expect(text).toContain("stress");
     expect(text).not.toContain("viole le seuil"); // pas de formulation numérique
+    db.close();
+  });
+});
+
+describe("voie générique (ontologie ouverte)", () => {
+  it("rend une arête ouverte depuis une ancre, avec label, et EXCLUT les relations noyau", async () => {
+    const db = createDb(":memory:");
+    await seedGraph(db); // pose instance_of / has_value / resulted_in / attributed_to (noyau)
+    // Arête ouverte : le run r1 a été réalisé sur un instrument (nœud kg_node).
+    await db.upsertKgEntity({ ws: "demo", type: "instrument", key: "confocal_zeiss", label: "Confocal Zeiss", aliases: [] });
+    await link(db, "demo", NODE.run("r1"), "performed_on", { type: "instrument", id: "confocal_zeiss" }, { provenance: "extracted", confidence: 0.8 });
+
+    const generic = await collectGenericFacts(db, "demo", [NODE.run("r1")]);
+    const relations = generic.map((e) => e.relation);
+    expect(relations).toContain("performed_on");
+    // Les relations du noyau chiffré ne doivent PAS ressortir ici (pas de doublon).
+    expect(relations).not.toContain(REL.instanceOf);
+    expect(relations).not.toContain(REL.hasValue);
+    expect(relations).not.toContain(REL.attributedTo);
+
+    const labels = await loadLabels(db, "demo");
+    const text = renderGenericFacts(generic, labels);
+    expect(text).toContain("performed_on");
+    expect(text).toContain("[instrument:confocal_zeiss]");
+    expect(text).toContain("Confocal Zeiss"); // label injecté
+    db.close();
+  });
+
+  it("écarte une arête sous le seuil de confiance", async () => {
+    const db = createDb(":memory:");
+    await link(db, "demo", NODE.run("r1"), "weak_link", { type: "operator", id: "x" }, { provenance: "extracted", confidence: 0.2 });
+    const generic = await collectGenericFacts(db, "demo", [NODE.run("r1")]);
+    expect(generic.map((e) => e.relation)).not.toContain("weak_link");
     db.close();
   });
 });

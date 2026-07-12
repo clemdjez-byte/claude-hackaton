@@ -1,7 +1,7 @@
 // lib/live-experiment/features/knowledge-graph/extract.test.ts
 import { describe, it, expect, afterEach } from "vitest";
 import { configureLlm } from "@/lib/core";
-import { extractProtocolOntology } from "./extract";
+import { extractProtocolOntology, extractOpenGraph } from "./extract";
 import type { Protocol } from "@/lib/core";
 
 const protocol: Protocol = {
@@ -53,5 +53,43 @@ describe("extractProtocolOntology", () => {
     const qual = out.failureModes.find((f) => f.trigger === "PBS au lieu du milieu");
     expect(qual?.paramTypeKey).toBeUndefined();
     expect(qual?.mechanism).toBe("stress cellulaire");
+  });
+});
+
+describe("extractOpenGraph (ontologie ouverte)", () => {
+  afterEach(() => configureLlm(null));
+
+  it("fail-closed : sans clé LLM, renvoie des listes vides", async () => {
+    configureLlm({
+      hasLlmKey: () => false,
+      modelFor: () => { throw new Error("ne doit pas être appelé"); },
+      generateObjectFor: async () => { throw new Error("ne doit pas être appelé"); },
+      generateProse: async () => { throw new Error("ne doit pas être appelé"); },
+    });
+    expect(await extractOpenGraph("un texte", [], "report")).toEqual({ entities: [], triplets: [] });
+  });
+
+  it("renvoie les entités objectives + triplets produits par l'IA", async () => {
+    configureLlm({
+      hasLlmKey: () => true,
+      modelFor: () => ({}) as never,
+      generateObjectFor: async () =>
+        ({
+          entities: [
+            { id: "e1", type: "run", label: "Run marquage", aliases: [], value: null, unit: null },
+            { id: "e2", type: "instrument", label: "Confocal Zeiss", aliases: ["zeiss"], value: null, unit: null },
+            { id: "e3", type: "operator", label: "Clément", aliases: [], value: null, unit: null },
+          ],
+          triplets: [
+            { subject: "e1", relation: "performed_on", object: "e2" },
+            { subject: "e1", relation: "performed_by", object: "e3" },
+          ],
+        }) as never,
+      generateProse: async () => "",
+    });
+    const g = await extractOpenGraph("run réalisé au confocal Zeiss par Clément", [], "report");
+    expect(g.entities.map((e) => e.type)).toEqual(["run", "instrument", "operator"]);
+    expect(g.triplets).toHaveLength(2);
+    expect(g.triplets[0].relation).toBe("performed_on");
   });
 });

@@ -257,3 +257,118 @@ describe("migration folder_id : bases existantes créées avant l'ajout de la co
     db2.close();
   });
 });
+
+describe("kg_edge : déduplication (upsert sur clé naturelle)", () => {
+  it("deux insertEdge identiques → une seule arête, id stable, attrs/confidence mis à jour", async () => {
+    const db = createDb(":memory:");
+    const base = {
+      ws: "ws1", relation: "uses", fromType: "run", fromId: "r1", toType: "reagent", toId: "mitotracker",
+    } as const;
+    const first = await db.insertEdge({ ...base, provenance: "extracted", confidence: 0.5, attrs: { note: "a" } });
+    const second = await db.insertEdge({ ...base, provenance: "extracted", confidence: 0.9, attrs: { note: "b" } });
+
+    const edges = await db.listEdges("ws1", { relation: "uses" });
+    expect(edges).toHaveLength(1); // pas de doublon
+    expect(second.id).toBe(first.id); // id de la première insertion conservé
+    expect(edges[0].confidence).toBe(0.9); // DO UPDATE a écrasé
+    expect(edges[0].attrs).toEqual({ note: "b" });
+    db.close();
+  });
+
+  it("des arêtes à clé naturelle distincte coexistent", async () => {
+    const db = createDb(":memory:");
+    await db.insertEdge({ ws: "ws1", relation: "uses", fromType: "run", fromId: "r1", toType: "reagent", toId: "a" });
+    await db.insertEdge({ ws: "ws1", relation: "uses", fromType: "run", fromId: "r1", toType: "reagent", toId: "b" });
+    await db.insertEdge({ ws: "ws1", relation: "measured", fromType: "run", fromId: "r1", toType: "reagent", toId: "a" });
+    expect(await db.listEdges("ws1")).toHaveLength(3);
+    db.close();
+  });
+});
+
+describe("kg_node : registre canonique générique (upsert + union d'alias)", () => {
+  it("upsertKgEntity sur (ws,type,key) met à jour label/alias sans dupliquer", async () => {
+    const db = createDb(":memory:");
+    await db.upsertKgEntity({ ws: "ws1", type: "instrument", key: "confocal_zeiss", label: "Confocal Zeiss", aliases: ["zeiss"] });
+    await db.upsertKgEntity({ ws: "ws1", type: "instrument", key: "confocal_zeiss", label: "Confocal Zeiss LSM980", aliases: ["zeiss", "lsm980"] });
+
+    const insts = await db.listKgEntities("ws1", { type: "instrument" });
+    expect(insts).toHaveLength(1);
+    expect(insts[0].label).toBe("Confocal Zeiss LSM980");
+    expect(insts[0].aliases).toEqual(["zeiss", "lsm980"]);
+    expect(insts[0].provenance).toBe("extracted"); // défaut
+    db.close();
+  });
+
+  it("listKgEntities filtre par type", async () => {
+    const db = createDb(":memory:");
+    await db.upsertKgEntity({ ws: "ws1", type: "instrument", key: "confocal", label: "Confocal", aliases: [] });
+    await db.upsertKgEntity({ ws: "ws1", type: "operator", key: "clement", label: "Clément", aliases: [] });
+    expect(await db.listKgEntities("ws1")).toHaveLength(2);
+    expect(await db.listKgEntities("ws1", { type: "operator" })).toHaveLength(1);
+    db.close();
+  });
+
+  it("mergeKgEntity re-pointe les arêtes, déduplique et supprime le perdant", async () => {
+    const db = createDb(":memory:");
+    await db.upsertKgEntity({ ws: "ws1", type: "reagent", key: "keep", label: "Keep", aliases: [] });
+    await db.upsertKgEntity({ ws: "ws1", type: "reagent", key: "loser", label: "Loser", aliases: [] });
+    // Arête sans conflit : run r2 → loser (doit migrer vers keep).
+    await db.insertEdge({ ws: "ws1", relation: "uses", fromType: "run", fromId: "r2", toType: "reagent", toId: "loser" });
+    // Arêtes en conflit : r1 → keep ET r1 → loser (le re-pointage créerait un doublon).
+    await db.insertEdge({ ws: "ws1", relation: "uses", fromType: "run", fromId: "r1", toType: "reagent", toId: "keep" });
+    await db.insertEdge({ ws: "ws1", relation: "uses", fromType: "run", fromId: "r1", toType: "reagent", toId: "loser" });
+
+    await db.mergeKgEntity("ws1", "reagent", "keep", "loser");
+
+    // Le nœud perdant a disparu.
+    expect((await db.listKgEntities("ws1", { type: "reagent" })).map((e) => e.key)).toEqual(["keep"]);
+    // Arêtes : r1→keep (le doublon a été résorbé) + r2→keep (migrée). Aucune vers loser.
+    const edges = await db.listEdges("ws1", { relation: "uses" });
+    expect(edges).toHaveLength(2);
+    expect(edges.every((e) => e.toId === "keep")).toBe(true);
+    expect(new Set(edges.map((e) => e.fromId))).toEqual(new Set(["r1", "r2"]));
+    db.close();
+  });
+});
+
+describe("migration kg_edge : dédup + index unique sur base pré-existante", () => {
+  let dir: string;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("dédoublonne les arêtes legacy AVANT de poser l'index unique", async () => {
+    dir = mkdtempSync(join(tmpdir(), "octopus-kgedge-"));
+    const path = join(dir, "old.db");
+
+    // Base legacy : kg_edge sans index unique, avec DEUX arêtes de même clé naturelle.
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE kg_edge (
+        id TEXT PRIMARY KEY, ws TEXT NOT NULL, relation TEXT NOT NULL,
+        from_type TEXT NOT NULL, from_id TEXT NOT NULL, to_type TEXT NOT NULL,
+        to_id TEXT NOT NULL, provenance TEXT NOT NULL DEFAULT 'derived',
+        confidence REAL NOT NULL DEFAULT 1.0, attrs TEXT, created_at TEXT NOT NULL
+      );
+    `);
+    for (const id of ["kg_a", "kg_b"]) {
+      legacy.prepare(
+        `INSERT INTO kg_edge (id, ws, relation, from_type, from_id, to_type, to_id, provenance, confidence, created_at)
+         VALUES (?, 'ws1', 'uses', 'run', 'r1', 'reagent', 'x', 'derived', 1.0, '2020-01-01T00:00:00.000Z')`
+      ).run(id);
+    }
+    legacy.close();
+
+    // Réouverture : la migration dédoublonne (garde la plus ancienne) puis pose l'index.
+    const db = createDb(path);
+    const edges = await db.listEdges("ws1");
+    expect(edges).toHaveLength(1);
+    expect(edges[0].id).toBe("kg_a"); // MIN(rowid) = la première insérée
+
+    // Ré-ouverture idempotente : ne re-dédoublonne pas, ne casse pas.
+    db.close();
+    const db2 = createDb(path);
+    expect(await db2.listEdges("ws1")).toHaveLength(1);
+    db2.close();
+  });
+});

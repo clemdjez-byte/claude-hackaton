@@ -12,6 +12,7 @@ import type {
   Fichier,
   Folder,
   KgEdge,
+  KgEntity,
   MemoryEntry,
   Outcome,
   Page,
@@ -104,6 +105,14 @@ CREATE TABLE IF NOT EXISTS parameter_type (
   ws TEXT NOT NULL, key TEXT NOT NULL, label TEXT NOT NULL, unit TEXT NOT NULL,
   aliases TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (ws, key)
 );
+
+CREATE TABLE IF NOT EXISTS kg_node (
+  ws TEXT NOT NULL, type TEXT NOT NULL, key TEXT NOT NULL, label TEXT NOT NULL,
+  aliases TEXT NOT NULL DEFAULT '[]', attrs TEXT,
+  provenance TEXT NOT NULL DEFAULT 'extracted', confidence REAL NOT NULL DEFAULT 1.0,
+  created_at TEXT NOT NULL, PRIMARY KEY (ws, type, key)
+);
+CREATE INDEX IF NOT EXISTS kg_node_ws_type_idx ON kg_node(ws, type);
 `;
 
 type Row = Record<string, unknown>;
@@ -239,6 +248,19 @@ function toParameterType(r: Row): ParameterType {
     createdAt: r.created_at as string,
   };
 }
+function toKgEntity(r: Row): KgEntity {
+  return {
+    ws: r.ws as string,
+    type: r.type as string,
+    key: r.key as string,
+    label: r.label as string,
+    aliases: p<string[]>(r.aliases) ?? [],
+    attrs: r.attrs == null ? undefined : p<Record<string, unknown>>(r.attrs),
+    provenance: (r.provenance as KgEntity["provenance"]) ?? "extracted",
+    confidence: r.confidence == null ? 1 : (r.confidence as number),
+    createdAt: r.created_at as string,
+  };
+}
 
 export function createDb(path = ":memory:"): Db {
   const sql = new Database(path);
@@ -262,6 +284,20 @@ export function createDb(path = ":memory:"): Db {
   }
   if (!edgeCols.some((c) => c.name === "attrs")) {
     sql.exec(`ALTER TABLE kg_edge ADD COLUMN attrs TEXT`);
+  }
+
+  // Migration idempotente : déduplication des arêtes (clé naturelle). Avant, chaque
+  // insertEdge créait une ligne neuve → re-publier/re-signer dupliquait tout le
+  // graphe. On dédoublonne l'existant (on garde la plus ancienne) PUIS on pose un
+  // index UNIQUE : à partir de là insertEdge devient un upsert (voir plus bas). La
+  // garde sur l'absence de l'index rend l'opération strictement one-shot.
+  const kgIdx = sql.prepare(`PRAGMA index_list(kg_edge)`).all() as { name: string }[];
+  if (!kgIdx.some((i) => i.name === "kg_edge_natural_idx")) {
+    sql.exec(`DELETE FROM kg_edge WHERE rowid NOT IN (
+      SELECT MIN(rowid) FROM kg_edge
+      GROUP BY ws, relation, from_type, from_id, to_type, to_id)`);
+    sql.exec(`CREATE UNIQUE INDEX kg_edge_natural_idx
+      ON kg_edge(ws, relation, from_type, from_id, to_type, to_id)`);
   }
 
   // Migration idempotente : bases existantes créées avant le passage aux vrais
@@ -633,17 +669,27 @@ export function createDb(path = ":memory:"): Db {
       const createdAt = nowIso();
       const provenance = nedge.provenance ?? "derived";
       const confidence = nedge.confidence ?? 1;
-      const edge: KgEdge = { ...nedge, provenance, confidence, id, createdAt };
+      const attrs = nedge.attrs == null ? null : j(nedge.attrs);
+      // Upsert sur la clé naturelle (kg_edge_natural_idx) : ré-indexer le même lien
+      // met à jour attrs/confidence/provenance au lieu de créer un doublon. Sur
+      // conflit, l'id de la première insertion est conservé (DO UPDATE n'y touche pas).
       sql
         .prepare(
           `INSERT INTO kg_edge (id, ws, relation, from_type, from_id, to_type, to_id, provenance, confidence, attrs, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(ws, relation, from_type, from_id, to_type, to_id)
+           DO UPDATE SET attrs = excluded.attrs, confidence = excluded.confidence, provenance = excluded.provenance`
         )
         .run(
-          id, edge.ws, edge.relation, edge.fromType, edge.fromId, edge.toType, edge.toId,
-          provenance, confidence, edge.attrs == null ? null : j(edge.attrs), createdAt
+          id, nedge.ws, nedge.relation, nedge.fromType, nedge.fromId, nedge.toType, nedge.toId,
+          provenance, confidence, attrs, createdAt
         );
-      return edge;
+      const r = sql
+        .prepare(
+          `SELECT * FROM kg_edge WHERE ws = ? AND relation = ? AND from_type = ? AND from_id = ? AND to_type = ? AND to_id = ?`
+        )
+        .get(nedge.ws, nedge.relation, nedge.fromType, nedge.fromId, nedge.toType, nedge.toId) as Row;
+      return toEdge(r);
     },
     async listEdges(ws, opts) {
       const clauses = ["ws = ?"];
@@ -721,6 +767,47 @@ export function createDb(path = ":memory:"): Db {
     async listParameterTypes(ws) {
       const rows = sql.prepare(`SELECT * FROM parameter_type WHERE ws = ? ORDER BY key ASC`).all(ws) as Row[];
       return rows.map(toParameterType);
+    },
+    async upsertKgEntity(ne) {
+      const createdAt = nowIso();
+      const provenance = ne.provenance ?? "extracted";
+      const confidence = ne.confidence ?? 1;
+      // Upsert sur (ws, type, key) : ré-extraire la même entité met à jour son
+      // libellé et UNIONNE ses alias (l'union est faite par l'appelant, cf.
+      // reconcileAndLink). Miroir de upsertParameterType, mais type libre.
+      sql
+        .prepare(
+          `INSERT INTO kg_node (ws, type, key, label, aliases, attrs, provenance, confidence, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(ws, type, key) DO UPDATE SET label = excluded.label, aliases = excluded.aliases, attrs = excluded.attrs`
+        )
+        .run(
+          ne.ws, ne.type, ne.key, ne.label, j(ne.aliases),
+          ne.attrs == null ? null : j(ne.attrs), provenance, confidence, createdAt
+        );
+      const r = sql.prepare(`SELECT * FROM kg_node WHERE ws = ? AND type = ? AND key = ?`).get(ne.ws, ne.type, ne.key) as Row;
+      return toKgEntity(r);
+    },
+    async listKgEntities(ws, opts) {
+      const clauses = ["ws = ?"];
+      const args: unknown[] = [ws];
+      if (opts?.type) { clauses.push("type = ?"); args.push(opts.type); }
+      const rows = sql.prepare(`SELECT * FROM kg_node WHERE ${clauses.join(" AND ")} ORDER BY type ASC, key ASC`).all(...args) as Row[];
+      return rows.map(toKgEntity);
+    },
+    async mergeKgEntity(ws, type, survivorKey, loserKey) {
+      if (survivorKey === loserKey) return;
+      // Transaction : re-pointe les arêtes du perdant vers le survivant. UPDATE OR
+      // IGNORE saute les lignes qui violeraient l'index unique (l'arête existe déjà
+      // côté survivant) ; on supprime ensuite les arêtes résiduelles du perdant
+      // (celles qui n'ont pas pu migrer = doublons), puis le nœud perdant.
+      const tx = sql.transaction(() => {
+        sql.prepare(`UPDATE OR IGNORE kg_edge SET from_id = ? WHERE ws = ? AND from_type = ? AND from_id = ?`).run(survivorKey, ws, type, loserKey);
+        sql.prepare(`UPDATE OR IGNORE kg_edge SET to_id = ? WHERE ws = ? AND to_type = ? AND to_id = ?`).run(survivorKey, ws, type, loserKey);
+        sql.prepare(`DELETE FROM kg_edge WHERE ws = ? AND ((from_type = ? AND from_id = ?) OR (to_type = ? AND to_id = ?))`).run(ws, type, loserKey, type, loserKey);
+        sql.prepare(`DELETE FROM kg_node WHERE ws = ? AND type = ? AND key = ?`).run(ws, type, loserKey);
+      });
+      tx();
     },
 
     close() {

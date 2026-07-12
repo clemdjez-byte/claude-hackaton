@@ -30,9 +30,7 @@ import {
 } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
 import { indexProtocol, indexEvidence, indexRun, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
-import { saveOutcome } from "@/lib/retrieval/knowledge-graph/outcome";
-import { indexProtocolGraph, indexRunGraph } from "@/lib/kg";
-import type { Verdict } from "@/lib/core";
+import { indexProtocolGraph } from "@/lib/kg";
 
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
 
@@ -177,22 +175,4 @@ export async function completeRunAction(runId: string): Promise<{ runId: string 
     // best-effort — le panneau rapport régénère au chargement si absent
   }
   return { runId };
-}
-
-/** Enregistre le verdict scientifique saisi par le chercheur pour un run terminé,
- *  puis peuple le graphe du run (extraction IA + attribution causale). Best-effort
- *  côté graphe : la saisie du verdict reste prioritaire. Pas de revalidatePath —
- *  le panneau rapport recharge via son GET (cf. en-tête de fichier). */
-export async function saveOutcomeAction(
-  runId: string,
-  input: { verdict: Verdict; metricValue?: number; metricUnit?: string; reason?: string }
-): Promise<void> {
-  const { store } = getBenchSession();
-  const metric =
-    input.metricValue != null && input.metricUnit
-      ? { value: input.metricValue, unit: input.metricUnit }
-      : undefined;
-  const outcome = await saveOutcome(store, { ws: WS, runId, verdict: input.verdict, metric, reason: input.reason });
-  const ctx = await getRunContext(store, runId);
-  if (ctx) await indexRunGraph(store, ctx.run, ctx.steps, ctx.protocol, outcome);
 }

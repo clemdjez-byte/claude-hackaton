@@ -17,6 +17,7 @@ import type {
   Folder,
   Id,
   KgEdge,
+  KgEntity,
   MemoryEntry,
   Outcome,
   Page,
@@ -60,6 +61,7 @@ export type NewFolder = { ws: Ws; name: string; parentId?: Id | null };
 export type NewOutcome = Omit<Outcome, "id" | "createdAt">;
 export type NewFailureMode = Omit<FailureMode, "id" | "createdAt">;
 export type NewParameterType = Omit<ParameterType, "id" | "createdAt">;
+export type NewKgEntity = Omit<KgEntity, "createdAt">;
 
 export interface Db {
   // pages (protocol | workflow | report) — primitive versionnée
@@ -119,6 +121,14 @@ export interface Db {
   listFailureModes(ws: Ws, opts?: { protocolId?: Id; paramTypeKey?: string }): Promise<FailureMode[]>;
   upsertParameterType(pt: NewParameterType): Promise<ParameterType>;
   listParameterTypes(ws: Ws): Promise<ParameterType[]>;
+
+  // knowledge graph — registre canonique générique (ontologie ouverte)
+  upsertKgEntity(e: NewKgEntity): Promise<KgEntity>;
+  listKgEntities(ws: Ws, opts?: { type?: string }): Promise<KgEntity[]>;
+  /** Fusionne deux nœuds d'un même type : re-pointe les arêtes du perdant vers le
+   *  survivant (sans créer de doublon), supprime les arêtes résiduelles puis le
+   *  nœud perdant. La mise à jour des alias du survivant est faite par l'appelant. */
+  mergeKgEntity(ws: Ws, type: string, survivorKey: string, loserKey: string): Promise<void>;
 
   close(): void;
 }

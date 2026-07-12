@@ -63,7 +63,34 @@ export default function ChatClient() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consolidating, setConsolidating] = useState(false);
+  const [consolidateMsg, setConsolidateMsg] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Dédoublonnage du knowledge graph à la demande : fusionne les concepts en
+  // double (« dose de quizartinib » ⟷ « quizartinib concentration ») pour que
+  // les questions transverses relient bien les protocoles. Sûr à relancer.
+  async function consolidate() {
+    if (consolidating) return;
+    setConsolidating(true);
+    setConsolidateMsg(null);
+    try {
+      const res = await fetch("/api/kg/consolidate", { method: "POST" });
+      const body = (await res.json()) as { merges?: { merged: string[] }[]; error?: string };
+      if (!res.ok) throw new Error(body.error ?? `status ${res.status}`);
+      const groups = body.merges?.length ?? 0;
+      const absorbed = body.merges?.reduce((s, m) => s + m.merged.length, 0) ?? 0;
+      setConsolidateMsg(
+        groups === 0
+          ? "Graph already clean — no duplicate concepts found."
+          : `Merged ${absorbed} duplicate node${absorbed > 1 ? "s" : ""} into ${groups} concept${groups > 1 ? "s" : ""}.`
+      );
+    } catch (e) {
+      setConsolidateMsg(e instanceof Error ? e.message : "Consolidation failed.");
+    } finally {
+      setConsolidating(false);
+    }
+  }
 
   function dropEmptyAssistantTail(list: ChatMessage[]): ChatMessage[] {
     const last = list[list.length - 1];
@@ -139,11 +166,21 @@ export default function ChatClient() {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col px-4 py-4 sm:px-5">
-      <header className="fade-in mb-3 shrink-0">
+      <header className="fade-in mb-3 flex shrink-0 items-start justify-between gap-3">
         <p className="text-xs text-muted">
           Answers are grounded in your protocols, runs, evidence, and reports — with sources.
         </p>
+        <button
+          type="button"
+          className="chip shrink-0"
+          onClick={consolidate}
+          disabled={consolidating}
+          title="Merge duplicate concepts in the knowledge graph so cross-protocol questions link up"
+        >
+          {consolidating ? "Consolidating…" : "Consolidate graph"}
+        </button>
       </header>
+      {consolidateMsg && <p className="mb-2 shrink-0 text-xs text-muted">{consolidateMsg}</p>}
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
         {messages.length === 0 && (

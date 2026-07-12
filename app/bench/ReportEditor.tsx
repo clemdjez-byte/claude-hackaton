@@ -9,8 +9,6 @@ import { useDebouncedCallback } from "use-debounce";
 import { NoteEditor } from "@/app/components/NoteEditor";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { StoredReport } from "@/lib/bench/auto-report";
-import type { Outcome } from "@/lib/core";
-import { OutcomeForm } from "@/app/bench/OutcomeForm";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -45,7 +43,6 @@ function CalendarIcon() {
 export default function ReportEditor({ runId }: { runId: string }) {
   const { open } = useWindowsContext();
   const [report, setReport] = useState<StoredReport | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [busy, setBusy] = useState(false);
@@ -76,14 +73,13 @@ export default function ReportEditor({ runId }: { runId: string }) {
           const b = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(b.error ?? `Error ${res.status}`);
         }
-        return res.json() as Promise<{ report: StoredReport; outcome: Outcome | null }>;
+        return res.json() as Promise<{ report: StoredReport }>;
       })
-      .then(({ report: r, outcome: o }) => {
+      .then(({ report: r }) => {
         if (cancelled) return;
         htmlRef.current = r.html;
         setHasHtml(Boolean(r.html.trim()));
         setReport(r);
-        setOutcome(o ?? null);
       })
       .catch((e) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load report.");
@@ -249,11 +245,8 @@ export default function ReportEditor({ runId }: { runId: string }) {
         </div>
       </div>
 
-      {/* Verdict scientifique — source empirique du knowledge graph. Saisi par
-          le chercheur (pas dérivable), il alimente l'extraction IA des causes. */}
-      <div className="outcome-card fade-up">
-        <OutcomeForm runId={runId} current={outcome} />
-      </div>
+      {/* Le verdict scientifique n'est plus saisi ici (D4) : l'IA le lit dans le
+          rapport signé et bâtit le graphe du run à la signature (route /sign). */}
 
       {/* éditeur document, pleine largeur (pas de carte) — remonté à chaque
           nouvelle version de page (sign / new revision changent report.version)
