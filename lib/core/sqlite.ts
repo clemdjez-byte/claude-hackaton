@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import type {
   Evidence,
   Fichier,
+  Folder,
   KgEdge,
   MemoryEntry,
   Page,
@@ -26,10 +27,16 @@ CREATE TABLE IF NOT EXISTS page (
   row_id INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL, ws TEXT NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL,
   content TEXT NOT NULL, version INTEGER NOT NULL, latest INTEGER NOT NULL,
-  created_at TEXT NOT NULL, draft_doc TEXT
+  created_at TEXT NOT NULL, draft_doc TEXT, folder_id TEXT
 );
 CREATE INDEX IF NOT EXISTS page_id_idx ON page(id, version);
 CREATE INDEX IF NOT EXISTS page_ws_idx ON page(ws, type, latest);
+
+CREATE TABLE IF NOT EXISTS folder (
+  id TEXT PRIMARY KEY, ws TEXT NOT NULL, name TEXT NOT NULL,
+  parent_id TEXT, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS folder_ws_idx ON folder(ws, parent_id);
 
 CREATE TABLE IF NOT EXISTS fichier (
   id TEXT PRIMARY KEY, ws TEXT NOT NULL, page_id TEXT, storage_key TEXT NOT NULL,
@@ -88,6 +95,16 @@ function toPage(r: Row): Page {
     latest: !!r.latest,
     createdAt: r.created_at as string,
     draftDoc: r.draft_doc == null ? undefined : p(r.draft_doc),
+    folderId: (r.folder_id as string) ?? null,
+  };
+}
+function toFolder(r: Row): Folder {
+  return {
+    id: r.id as string,
+    ws: r.ws as string,
+    name: r.name as string,
+    parentId: (r.parent_id as string) ?? null,
+    createdAt: r.created_at as string,
   };
 }
 function toFichier(r: Row): Fichier {
@@ -161,6 +178,12 @@ export function createDb(path = ":memory:"): Db {
   sql.pragma("journal_mode = WAL");
   sql.exec(SCHEMA);
 
+  // Migration idempotente : bases existantes créées avant l'ajout de folder_id.
+  const cols = sql.prepare(`PRAGMA table_info(page)`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === "folder_id")) {
+    sql.exec(`ALTER TABLE page ADD COLUMN folder_id TEXT`);
+  }
+
   return {
     async insertPage(np) {
       const id = shortId("pg");
@@ -174,11 +197,12 @@ export function createDb(path = ":memory:"): Db {
         latest: true,
         createdAt: nowIso(),
         draftDoc: np.draftDoc,
+        folderId: null,
       };
       sql
         .prepare(
-          `INSERT INTO page (id, ws, type, title, content, version, latest, created_at, draft_doc)
-           VALUES (@id, @ws, @type, @title, @content, 1, 1, @createdAt, @draft_doc)`
+          `INSERT INTO page (id, ws, type, title, content, version, latest, created_at, draft_doc, folder_id)
+           VALUES (@id, @ws, @type, @title, @content, 1, 1, @createdAt, @draft_doc, NULL)`
         )
         .run({ ...row, content: j(np.content), latest: 1, draft_doc: np.draftDoc == null ? null : j(np.draftDoc) });
       return row;
@@ -191,6 +215,7 @@ export function createDb(path = ":memory:"): Db {
       if (!cur) throw new Error(`Page introuvable : ${id}`);
       sql.prepare(`UPDATE page SET latest = 0 WHERE id = ?`).run(id);
       const draftDoc = patch.draftDoc !== undefined ? patch.draftDoc : (cur.draft_doc == null ? undefined : p(cur.draft_doc));
+      const folderId = (cur.folder_id as string) ?? null;
       const next: Page = {
         id,
         ws: cur.ws as string,
@@ -201,13 +226,14 @@ export function createDb(path = ":memory:"): Db {
         latest: true,
         createdAt: nowIso(),
         draftDoc: draftDoc == null ? undefined : draftDoc,
+        folderId,
       };
       sql
         .prepare(
-          `INSERT INTO page (id, ws, type, title, content, version, latest, created_at, draft_doc)
-           VALUES (@id, @ws, @type, @title, @content, @version, 1, @createdAt, @draft_doc)`
+          `INSERT INTO page (id, ws, type, title, content, version, latest, created_at, draft_doc, folder_id)
+           VALUES (@id, @ws, @type, @title, @content, @version, 1, @createdAt, @draft_doc, @folder_id)`
         )
-        .run({ ...next, content: j(next.content), latest: 1, draft_doc: draftDoc == null ? null : j(draftDoc) });
+        .run({ ...next, content: j(next.content), latest: 1, draft_doc: draftDoc == null ? null : j(draftDoc), folder_id: folderId });
       return next;
     },
 
@@ -224,6 +250,7 @@ export function createDb(path = ":memory:"): Db {
         id, ws: cur.ws as string, type: cur.type as string, title,
         content, version: cur.version as number, latest: true,
         createdAt: cur.created_at as string, draftDoc: draftDoc == null ? undefined : draftDoc,
+        folderId: (cur.folder_id as string) ?? null,
       };
     },
 
@@ -248,6 +275,40 @@ export function createDb(path = ":memory:"): Db {
         .prepare(`SELECT * FROM page WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC`)
         .all(...args) as Row[];
       return rows.map(toPage);
+    },
+
+    async deletePage(id) {
+      sql.prepare(`DELETE FROM page WHERE id = ?`).run(id);
+    },
+
+    async listFolders(ws) {
+      const rows = sql.prepare(`SELECT * FROM folder WHERE ws = ? ORDER BY name`).all(ws) as Row[];
+      return rows.map(toFolder);
+    },
+    async insertFolder(nf) {
+      const id = shortId("fld");
+      const createdAt = nowIso();
+      const folder: Folder = { id, ws: nf.ws, name: nf.name, parentId: nf.parentId ?? null, createdAt };
+      sql
+        .prepare(`INSERT INTO folder (id, ws, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)`)
+        .run(id, folder.ws, folder.name, folder.parentId, createdAt);
+      return folder;
+    },
+    async updateFolder(id, patch) {
+      const cur = sql.prepare(`SELECT * FROM folder WHERE id = ?`).get(id) as Row | undefined;
+      if (!cur) throw new Error(`Dossier introuvable : ${id}`);
+      const name = patch.name ?? (cur.name as string);
+      const parentId = patch.parentId !== undefined ? patch.parentId : ((cur.parent_id as string) ?? null);
+      sql
+        .prepare(`UPDATE folder SET name = @name, parent_id = @parentId WHERE id = @id`)
+        .run({ id, name, parentId });
+      return { id, ws: cur.ws as string, name, parentId, createdAt: cur.created_at as string };
+    },
+    async deleteFolder(id) {
+      sql.prepare(`DELETE FROM folder WHERE id = ?`).run(id);
+    },
+    async setPageFolder(id, folderId) {
+      sql.prepare(`UPDATE page SET folder_id = ? WHERE id = ?`).run(folderId, id);
     },
 
     async insertFichier(nf) {

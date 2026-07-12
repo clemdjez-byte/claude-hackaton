@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import type {
   Evidence,
   Fichier,
+  Folder,
   Id,
   KgEdge,
   MemoryEntry,
@@ -50,6 +51,7 @@ export type NewEmbedding = {
   meta?: Record<string, unknown>;
 };
 export type NewEdge = Omit<KgEdge, "id" | "createdAt">;
+export type NewFolder = { ws: Ws; name: string; parentId?: Id | null };
 
 export interface Db {
   // pages (protocol | workflow | report) — primitive versionnée
@@ -58,6 +60,14 @@ export interface Db {
   updateDraft(id: Id, patch: { title?: string; content?: unknown; draftDoc?: unknown }): Promise<Page>;
   getPage(id: Id, version?: number): Promise<Page | null>;
   listPages(ws: Ws, opts?: { type?: string; latestOnly?: boolean }): Promise<Page[]>;
+  deletePage(id: Id): Promise<void>; // supprime une page logique (toutes versions)
+
+  // dossiers (rangement de l'explorateur)
+  listFolders(ws: Ws): Promise<Folder[]>;
+  insertFolder(nf: NewFolder): Promise<Folder>;
+  updateFolder(id: Id, patch: { name?: string; parentId?: Id | null }): Promise<Folder>;
+  deleteFolder(id: Id): Promise<void>; // supprime UNE ligne dossier (cascade gérée côté API/tree)
+  setPageFolder(id: Id, folderId: Id | null): Promise<void>; // déplace une page (toutes ses versions)
 
   // fichiers (binaires : photos, exports)
   insertFichier(f: NewFichier): Promise<Fichier>;

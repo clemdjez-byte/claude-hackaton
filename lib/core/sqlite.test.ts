@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
+import { describe, it, expect, afterEach } from "vitest";
 import { createDb } from "./sqlite";
 
 // Le seam en action : SQLite :memory: joue le rôle du « faux Db injecté ».
@@ -102,5 +106,143 @@ describe("draft_doc : brouillon mutable + figeage immuable", () => {
     const frozen = await db.getPage(page.id, 1);
     expect(frozen?.content).toEqual({ v: 1 });                // v1 intacte
     db.close();
+  });
+});
+
+describe("folder : rangement de l'explorateur", () => {
+  it("insertFolder puis listFolders la retrouve, triée par nom", async () => {
+    const db = createDb();
+    await db.insertFolder({ ws: "ws1", name: "Zèbre" });
+    await db.insertFolder({ ws: "ws1", name: "Alpha" });
+    const list = await db.listFolders("ws1");
+    expect(list.map((f) => f.name)).toEqual(["Alpha", "Zèbre"]);
+    expect(list[0].parentId).toBeNull();
+    db.close();
+  });
+
+  it("insertFolder avec parentId imbrique le dossier", async () => {
+    const db = createDb();
+    const parent = await db.insertFolder({ ws: "ws1", name: "Parent" });
+    const child = await db.insertFolder({ ws: "ws1", name: "Enfant", parentId: parent.id });
+    const list = await db.listFolders("ws1");
+    const got = list.find((f) => f.id === child.id);
+    expect(got?.parentId).toBe(parent.id);
+    db.close();
+  });
+
+  it("updateFolder renomme et/ou reparente", async () => {
+    const db = createDb();
+    const a = await db.insertFolder({ ws: "ws1", name: "A" });
+    const b = await db.insertFolder({ ws: "ws1", name: "B" });
+    const renamed = await db.updateFolder(a.id, { name: "A2" });
+    expect(renamed.name).toBe("A2");
+    expect(renamed.parentId).toBeNull();
+    const reparented = await db.updateFolder(a.id, { parentId: b.id });
+    expect(reparented.parentId).toBe(b.id);
+    expect(reparented.name).toBe("A2"); // conservé
+    const backToRoot = await db.updateFolder(a.id, { parentId: null });
+    expect(backToRoot.parentId).toBeNull();
+    db.close();
+  });
+
+  it("deleteFolder retire uniquement la ligne visée", async () => {
+    const db = createDb();
+    const a = await db.insertFolder({ ws: "ws1", name: "A" });
+    const b = await db.insertFolder({ ws: "ws1", name: "B" });
+    await db.deleteFolder(a.id);
+    const list = await db.listFolders("ws1");
+    expect(list.map((f) => f.id)).toEqual([b.id]);
+    db.close();
+  });
+
+  it("insertPage démarre à la racine (folderId null) ; setPageFolder déplace toutes les versions", async () => {
+    const db = createDb();
+    const folder = await db.insertFolder({ ws: "ws1", name: "Rapports" });
+    const page = await db.insertPage({ ws: "ws1", type: "report", title: "R1", content: {} });
+    expect(page.folderId).toBeNull();
+
+    await db.setPageFolder(page.id, folder.id);
+    const v2 = await db.newPageVersion(page.id, { content: { done: true } });
+    expect(v2.folderId).toBe(folder.id); // la nouvelle version hérite du dossier courant
+
+    const latest = await db.getPage(page.id);
+    expect(latest?.folderId).toBe(folder.id);
+    const pinned = await db.getPage(page.id, 1);
+    expect(pinned?.folderId).toBe(folder.id); // setPageFolder a bougé TOUTES les versions
+
+    await db.setPageFolder(page.id, null);
+    const back = await db.getPage(page.id);
+    expect(back?.folderId).toBeNull();
+
+    const listed = await db.listPages("ws1", { type: "report" });
+    expect(listed.find((p) => p.id === page.id)?.folderId).toBeNull();
+    db.close();
+  });
+
+  it("deletePage retire toutes les versions de la page", async () => {
+    const db = createDb();
+    const page = await db.insertPage({ ws: "ws1", type: "report", title: "R1", content: { v: 1 } });
+    await db.newPageVersion(page.id, { content: { v: 2 } });
+    await db.deletePage(page.id);
+    expect(await db.getPage(page.id)).toBeNull();
+    expect(await db.getPage(page.id, 1)).toBeNull();
+    db.close();
+  });
+
+  it("insertPage sur un createDb rejoué (schéma ré-exécuté) reste idempotent", async () => {
+    const db = createDb(); // sql.exec(SCHEMA) tourne à chaque createDb → doit rester idempotent
+    const page = await db.insertPage({ ws: "ws1", type: "report", title: "R", content: {} });
+    expect(page.folderId).toBeNull();
+    const back = await db.getPage(page.id);
+    expect(back).toHaveProperty("folderId");
+    db.close();
+  });
+});
+
+describe("migration folder_id : bases existantes créées avant l'ajout de la colonne", () => {
+  let dir: string;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("ALTER TABLE ADD COLUMN tourne au réouverture d'une base pré-migration", async () => {
+    dir = mkdtempSync(join(tmpdir(), "octopus-migration-"));
+    const path = join(dir, "old.db");
+
+    // Simule une base créée AVANT l'ajout de folder_id : table page sans cette colonne.
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE page (
+        row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL, ws TEXT NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL,
+        content TEXT NOT NULL, version INTEGER NOT NULL, latest INTEGER NOT NULL,
+        created_at TEXT NOT NULL, draft_doc TEXT
+      );
+    `);
+    legacy.prepare(
+      `INSERT INTO page (id, ws, type, title, content, version, latest, created_at)
+       VALUES ('pg_legacy', 'ws1', 'report', 'Vieux rapport', '{}', 1, 1, '2020-01-01T00:00:00.000Z')`
+    ).run();
+    const colsBefore = legacy.prepare(`PRAGMA table_info(page)`).all() as { name: string }[];
+    expect(colsBefore.some((c) => c.name === "folder_id")).toBe(false);
+    legacy.close();
+
+    // Réouverture via createDb : la migration idempotente doit ajouter folder_id sans casser les données.
+    const db = createDb(path);
+    const reopened = new Database(path);
+    const colsAfter = reopened.prepare(`PRAGMA table_info(page)`).all() as { name: string }[];
+    expect(colsAfter.some((c) => c.name === "folder_id")).toBe(true);
+    reopened.close();
+
+    const legacyPage = await db.getPage("pg_legacy");
+    expect(legacyPage?.title).toBe("Vieux rapport"); // donnée pré-existante intacte
+    expect(legacyPage?.folderId).toBeNull(); // nouvelle colonne, valeur par défaut NULL
+
+    // Et createDb ré-exécuté sur la même base (déjà migrée) ne casse rien.
+    db.close();
+    const db2 = createDb(path);
+    const stillThere = await db2.getPage("pg_legacy");
+    expect(stillThere?.title).toBe("Vieux rapport");
+    db2.close();
   });
 });

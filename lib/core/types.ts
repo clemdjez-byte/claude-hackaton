@@ -34,6 +34,15 @@ export interface Page {
   latest: boolean;
   createdAt: string; // ISO
   draftDoc?: Json; // document Tiptap éditable (protocole) ; null si non édité dans l'éditeur-document
+  folderId?: Id | null; // dossier de rangement dans l'explorateur ; null = racine
+}
+
+export interface Folder {
+  id: Id;
+  ws: Ws;
+  name: string;
+  parentId: Id | null;
+  createdAt: string;
 }
 
 export interface Fichier {
