@@ -12,8 +12,32 @@ import type { StoredReport } from "@/lib/bench/auto-report";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-function when(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ");
+// Auteur affiché sur les brouillons (mono-utilisateur). Les rapports signés
+// portent leur propre report.signedBy.
+const AUTHOR = "Clément Djezvedjian";
+
+// JJ/MM/AAAA depuis un ISO stocké (pas de dépendance au fuseau).
+function dateFR(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function UserIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+    </svg>
+  );
 }
 
 export default function ReportEditor({ runId }: { runId: string }) {
@@ -163,32 +187,34 @@ export default function ReportEditor({ runId }: { runId: string }) {
   const signed = Boolean(report.signedAt);
 
   return (
-    <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-6">
-      <header className="fade-in">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="eyebrow mb-3">Report</p>
-            <h1 className="text-3xl font-semibold tracking-tight">{report.protocolTitle}</h1>
-          </div>
-          <button type="button" onClick={() => open("run", { runId })} className="chip shrink-0 mt-1">
-            ← Back to run
-          </button>
-        </div>
+    <div className="report-page">
+      <header className="fade-in flex items-start justify-between gap-4">
+        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight min-w-0">{report.protocolTitle}</h1>
+        <button type="button" onClick={() => open("run", { runId })} className="chip shrink-0 mt-1">
+          ← Back to run
+        </button>
       </header>
 
-      {/* barre méta façon ELN */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface-2/40 px-4 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`pill ${signed ? "accent" : ""}`}>{signed ? "Signed" : "Draft"}</span>
-          <span className="receipt">v{report.version}</span>
-          <span className="receipt">· generated {when(report.generatedAt)}</span>
-          {signed && (
-            <span className="receipt">
-              · Signed by {report.signedBy} · {when(report.signedAt!)}
-            </span>
-          )}
+      {/* barre méta mono façon ELN (auteur · date · version · statut) */}
+      <div className="report-meta">
+        <div className="report-meta-facts">
+          <span className="report-meta-item">
+            <UserIcon />
+            {signed ? report.signedBy : AUTHOR}
+          </span>
+          <span className="report-meta-sep">·</span>
+          <span className="report-meta-item">
+            <CalendarIcon />
+            {dateFR(report.generatedAt)}
+          </span>
+          <span className="report-meta-sep">·</span>
+          <span className="report-meta-item">V{report.version}</span>
+          <span className="report-meta-sep">·</span>
+          <span className={`report-meta-item ${signed ? "signed" : ""}`}>
+            {signed ? "Signed" : "Unsigned"}
+          </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="report-meta-actions">
           {actionError && <span className="text-[12px] text-danger">{actionError}</span>}
           {!signed && (
             <span className="mono-display text-[12px] text-muted">
@@ -202,7 +228,7 @@ export default function ReportEditor({ runId }: { runId: string }) {
               type="button"
               onClick={handleNewRevision}
               disabled={busy}
-              className="btn-primary px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="report-meta-btn disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? "…" : "New revision"}
             </button>
@@ -211,19 +237,19 @@ export default function ReportEditor({ runId }: { runId: string }) {
               type="button"
               onClick={handleSign}
               disabled={busy || !hasHtml}
-              className="btn-accent px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="report-meta-btn disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {busy ? "…" : "Sign"}
+              {busy ? "…" : `Sign V${report.version}`}
             </button>
           )}
         </div>
       </div>
 
-      {/* éditeur document — remonté à chaque nouvelle version de page (sign /
-          new revision changent report.version) pour repartir d'un contenu et
-          d'un editable propres ; l'autosave (updateDraft) ne touche pas la
-          version donc ne remonte jamais l'éditeur pendant la frappe. */}
-      <div className="card p-6 doc-editor fade-up">
+      {/* éditeur document, pleine largeur (pas de carte) — remonté à chaque
+          nouvelle version de page (sign / new revision changent report.version)
+          pour repartir d'un contenu et d'un editable propres ; l'autosave ne
+          touche pas la version donc ne remonte jamais l'éditeur pendant la frappe. */}
+      <div className="doc-editor fade-up">
         <NoteEditor
           key={`${report.id}:${report.version}`}
           initialContent={report.html}

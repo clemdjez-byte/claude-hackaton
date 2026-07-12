@@ -1,13 +1,49 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Win, WinRect } from "./useWindows";
+import type { Win, WinRect, WinLayout } from "./useWindows";
 
 const MIN_WIDTH = 360;
 const MIN_HEIGHT = 240;
 
+// Largeur visuelle d'une vignette de fenêtre réduite (empilée en bas à droite).
+// La hauteur suit le ratio de la fenêtre : l'aperçu est la fenêtre entière
+// (barre + contenu) mise à l'échelle, pas un rendu séparé.
+const MIN_CARD_W = 230;
+
 type ResizeDir = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 const RESIZE_HANDLES: ResizeDir[] = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
+
+// Contrôles de la barre de titre (façon macOS) — SVG inline, 14px.
+function MinimizeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+function SplitIcon({ side }: { side: "left" | "right" }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d={side === "left" ? "M10 4.5v15" : "M14 4.5v15"} />
+    </svg>
+  );
+}
+function FullscreenIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5.5A2.5 2.5 0 0 0 3 5.5V8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16M16 21h2.5a2.5 2.5 0 0 0 2.5-2.5V16" />
+    </svg>
+  );
+}
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
 
 // Desktop window frame: draggable by its title bar, resizable from any edge or
 // corner, fullscreen toggle, close, focus-to-front.
@@ -23,19 +59,27 @@ export function Window({
   win,
   active,
   tabs,
+  minIndex,
+  dockOpen,
   onFocus,
   onClose,
-  onFullscreen,
+  onSetLayout,
   onRectCommit,
+  onDockEnter,
+  onDockLeave,
   children,
 }: {
   win: Win;
   active: boolean;
   tabs?: React.ReactNode;
+  minIndex: number;
+  dockOpen: boolean;
   onFocus: () => void;
   onClose: () => void;
-  onFullscreen: () => void;
+  onSetLayout: (layout: WinLayout) => void;
   onRectCommit: (rect: WinRect) => void;
+  onDockEnter: () => void;
+  onDockLeave: () => void;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -65,7 +109,9 @@ export function Window({
     const down = (e: PointerEvent) => {
       // Focus dispatch pour cette interaction vient déjà de onPointerDown={onFocus}
       // sur la racine .window (bulle native depuis .win-bar) — pas de doublon ici.
-      if ((e.target as HTMLElement).closest("button") || w.classList.contains("full")) return;
+      // On ne déplace que les fenêtres flottantes (full / snap gauche/droite
+      // sont positionnées par CSS et n'ont pas de rect libre).
+      if ((e.target as HTMLElement).closest("button") || !w.classList.contains("float")) return;
       const r = w.getBoundingClientRect();
       ox = r.left;
       oy = r.top;
@@ -124,7 +170,7 @@ export function Window({
       let cur: WinRect = { left: 0, top: 0, width: 0, height: 0 };
       const down = (e: PointerEvent) => {
         e.stopPropagation();
-        if (w.classList.contains("full")) return;
+        if (!w.classList.contains("float")) return;
         onFocusRef.current();
         const r = w.getBoundingClientRect();
         L = r.left;
@@ -180,38 +226,97 @@ export function Window({
     return () => cleanups.forEach((fn) => fn());
   }, []);
 
+  const isFloat = win.layout === "float";
   const isFull = win.layout === "full";
+  const isMin = win.layout === "min";
+
+  // Vignette réduite : la fenêtre garde sa taille réelle (rect) mais est mise à
+  // l'échelle par CSS (--min-k). L'empilement/éventail et le décalage sont
+  // pilotés par --min-i / --min-cardh, résolus dans shell.css.
+  const minScale = MIN_CARD_W / win.rect.width;
+  const style: React.CSSProperties = isMin
+    ? ({
+        width: win.rect.width,
+        height: win.rect.height,
+        zIndex: 90 + minIndex,
+        "--min-i": minIndex,
+        "--min-k": minScale,
+        "--min-cardh": `${Math.round(win.rect.height * minScale)}px`,
+      } as React.CSSProperties)
+    : isFloat
+      ? {
+          left: win.rect.left,
+          top: win.rect.top,
+          width: win.rect.width,
+          height: win.rect.height,
+          zIndex: win.z,
+        }
+      : { zIndex: win.z };
 
   return (
     <div
       ref={ref}
-      className={`window${isFull ? " full" : ""}${active ? " active" : ""}`}
-      style={
-        isFull
-          ? { zIndex: win.z }
-          : {
-              left: win.rect.left,
-              top: win.rect.top,
-              width: win.rect.width,
-              height: win.rect.height,
-              zIndex: win.z,
-            }
-      }
+      className={`window ${win.layout}${active ? " active" : ""}${isMin && dockOpen ? " dock-open" : ""}`}
+      style={style}
       onPointerDown={onFocus}
     >
       <div ref={barRef} className="win-bar">
         <span className="win-title">{win.title}</span>
         {isFull && <div className="win-tablist">{tabs}</div>}
         <div className="win-actions">
-          <button type="button" className="tbtn" onClick={onFullscreen} aria-label="Toggle fullscreen">
-            ⤢
+          <button type="button" className="win-ctl" onClick={() => onSetLayout("min")} aria-label="Minimize" title="Minimize">
+            <MinimizeIcon />
           </button>
-          <button type="button" className="tbtn" onClick={onClose} aria-label="Close">
-            ✕
+          <button
+            type="button"
+            className={`win-ctl${win.layout === "left" ? " on" : ""}`}
+            onClick={() => onSetLayout(win.layout === "left" ? "float" : "left")}
+            aria-label="Snap left"
+            title="Snap left"
+          >
+            <SplitIcon side="left" />
+          </button>
+          <button
+            type="button"
+            className={`win-ctl${win.layout === "right" ? " on" : ""}`}
+            onClick={() => onSetLayout(win.layout === "right" ? "float" : "right")}
+            aria-label="Snap right"
+            title="Snap right"
+          >
+            <SplitIcon side="right" />
+          </button>
+          <button
+            type="button"
+            className={`win-ctl${isFull ? " on" : ""}`}
+            onClick={() => onSetLayout(isFull ? "float" : "full")}
+            aria-label="Toggle fullscreen"
+            title="Fullscreen"
+          >
+            <FullscreenIcon />
+          </button>
+          <button type="button" className="win-ctl close" onClick={onClose} aria-label="Close" title="Close">
+            <CloseIcon />
           </button>
         </div>
       </div>
       <div className="win-body">{children}</div>
+      {isMin && (
+        <button
+          type="button"
+          className="min-hit"
+          title={`Restore ${win.title}`}
+          aria-label={`Restore ${win.title}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetLayout("float");
+            onFocus();
+          }}
+          onMouseEnter={onDockEnter}
+          onMouseLeave={onDockLeave}
+        >
+          <span className="min-hit-label">{win.title}</span>
+        </button>
+      )}
       {RESIZE_HANDLES.map((dir) => (
         <div key={dir} className={`rz rz-${dir}`} data-dir={dir} />
       ))}

@@ -32,12 +32,12 @@
 
   /* Palette d'accent (utilisée pour donner une identité couleur aux agents et
      ponctuer l'interface). Toutes les valeurs sont flat, jamais en gradient. */
-  --oct-forest: #0A4F26;        /* vert forêt — shade */
-  --oct-emerald: #1A9E47;       /* vert émeraude — core */
-  --oct-aqua: #0F9DAE;           /* aqua — shade */
-  --oct-turquoise: #1FB6C1;     /* turquoise — core */
-  --oct-leaf: #7FE0A3;           /* vert clair — tint */
-  --oct-mist: #C5F0D2;           /* turquoise très clair — tint */
+  --oct-forest: #A11250;        /* rose profond — shade */
+  --oct-emerald: #E53971;       /* rose vif — core */
+  --oct-aqua: #FF7A2B;           /* orange — shade */
+  --oct-turquoise: #FF9040;     /* orange clair — core */
+  --oct-leaf: #FFA3C1;           /* rose clair — tint */
+  --oct-mist: #FFD9E5;           /* rose très clair — tint */
   --oct-amber-soft: #FCE6BE;     /* amber clair — tint */
   --oct-brick-soft: #FAD6D0;     /* brick clair — tint */
   --oct-info-soft: #CBEEF6;     /* aqua très clair — tint */

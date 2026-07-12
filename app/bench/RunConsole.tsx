@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
+import { type CSSProperties, useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { Evidence, Step } from "@/lib/core";
 import type { RunContext } from "@/lib/bench";
@@ -156,6 +156,45 @@ export default function RunConsole({
   const [manualIndex, setManualIndex] = useState<number | null>(null);
   // Observation dont on demande confirmation de suppression (inline).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Hauteur (px) du copilote vocal au centre : réglable en glissant sa poignée
+  // (vers le haut = plus grand pour lire le transcript, vers le bas = plus petit).
+  const [voiceH, setVoiceH] = useState(200);
+  // Auto-scroll du transcript : on colle au bas à chaque nouvelle ligne / mot.
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+
+  // Glisser la poignée : chaque pixel monté agrandit le copilote d'autant, borné.
+  function startVoiceResize(startY: number) {
+    const startH = voiceH;
+    const onMove = (ev: PointerEvent) =>
+      setVoiceH(Math.min(640, Math.max(96, startH + (startY - ev.clientY))));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  // Largeurs (px) des colonnes latérales, réglables via les poignées verticales.
+  const [leftW, setLeftW] = useState(300);
+  const [rightW, setRightW] = useState(320);
+
+  // Glisser une poignée verticale : la gauche grandit vers la droite, la droite
+  // grandit vers la gauche ; le centre absorbe le reste. Bornes de sécurité.
+  function startColResize(startX: number, side: "left" | "right") {
+    const start = side === "left" ? leftW : rightW;
+    const onMove = (ev: PointerEvent) => {
+      const delta = side === "left" ? ev.clientX - startX : startX - ev.clientX;
+      const next = Math.min(560, Math.max(200, start + delta));
+      (side === "left" ? setLeftW : setRightW)(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   function confirmFinish() {
     if (finishing) return;
@@ -172,7 +211,6 @@ export default function RunConsole({
   }
 
   const stepId = currentStep?.id; // la capture s'attache à l'étape EN COURS
-  const doneCount = steps.filter((s) => s.status === "done").length;
   const timeline = [...evidence].reverse();
 
   // Étape affichée au milieu = sélection manuelle, sinon l'étape en cours.
@@ -237,6 +275,15 @@ export default function RunConsole({
     }, 1000);
     return () => clearInterval(iv);
   }, [timers.length]);
+
+  // Suit le bas du transcript : à chaque ligne ajoutée OU mot streamé sur la
+  // dernière ligne, on recolle en bas pour toujours voir la conversation la plus
+  // récente (comme un fil de chat).
+  const lastLineText = voiceRoom.transcript[voiceRoom.transcript.length - 1]?.text;
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [voiceRoom.transcript.length, lastLineText]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -318,7 +365,6 @@ export default function RunConsole({
             </button>
             <h1 className="text-lg font-semibold tracking-tight truncate">{protocol.title}</h1>
             <span className={`pill ${run.status === "completed" ? "accent" : ""}`}>{run.status}</span>
-            <span className="receipt">{doneCount}/{steps.length} steps</span>
           </div>
         </div>
         {live && (
@@ -333,13 +379,16 @@ export default function RunConsole({
         )}
       </header>
 
-      {/* 3 colonnes pleine largeur : sur écran étroit, empilé + scroll page. */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-y-auto lg:overflow-hidden">
+      {/* 3 colonnes : largeurs latérales réglables (poignées) sur desktop ; sur
+          écran étroit, empilé + scroll page. */}
+      <div
+        style={{ "--col-left": `${leftW}px`, "--col-right": `${rightW}px` } as CSSProperties}
+        className="flex-1 min-h-0 flex flex-col gap-4 lg:flex-row lg:gap-0 overflow-y-auto lg:overflow-hidden"
+      >
         {/* ── Colonne 1 : la liste des étapes (référence) ── */}
-        <section className="lg:col-span-3 min-w-0 card p-5 flex flex-col min-h-0">
+        <section className="w-full lg:w-[var(--col-left)] lg:shrink-0 min-w-0 card p-5 flex flex-col min-h-0">
           <div className="flex items-baseline justify-between gap-4 mb-2 shrink-0">
             <h2 className="text-base font-semibold tracking-tight">All steps</h2>
-            <span className="receipt">{doneCount}/{steps.length}</span>
           </div>
           <ol className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1">
             {steps.map((s) => {
@@ -362,6 +411,9 @@ export default function RunConsole({
                   }`}
                 >
                   <StepMarker status={s.status} />
+                  <span className="text-sm tabular-nums text-muted shrink-0 w-5 text-right">
+                    {s.protocolStepIndex + 1}.
+                  </span>
                   <span
                     className={`flex-1 min-w-0 text-sm font-medium ${
                       s.status === "skipped" ? "line-through text-muted" : ""
@@ -375,9 +427,24 @@ export default function RunConsole({
           </ol>
         </section>
 
-        {/* ── Colonne 2 : ÉTAPE AFFICHÉE (sélectionnée à gauche, sinon en cours) ── */}
+        {/* Poignée gauche : glisser pour élargir/rétrécir la liste des étapes. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Glisser pour redimensionner"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            startColResize(e.clientX, "left");
+          }}
+          className="group hidden lg:flex shrink-0 w-3 mx-0.5 items-center justify-center cursor-col-resize touch-none"
+        >
+          <span className="w-1 h-10 rounded-full bg-[var(--oct-border,#E5E2D8)] group-hover:bg-[var(--border-strong)] transition-colors" />
+        </div>
+
+        {/* ── Colonne 2 : ÉTAPE AFFICHÉE (haut) + copilote vocal (bas, redimensionnable) ── */}
+        <div className="w-full lg:flex-1 min-w-0 flex flex-col min-h-0">
         <section
-          className={`lg:col-span-6 min-w-0 card p-6 flex flex-col min-h-0 fade-up ${
+          className={`min-w-0 card p-6 flex flex-col min-h-0 fade-up flex-1 ${
             viewingCurrent ? "border-accent" : "border-border-strong"
           }`}
         >
@@ -579,19 +646,55 @@ export default function RunConsole({
           )}
         </section>
 
-        {/* ── Colonne 3 : outils (voix + capture + observations) ── */}
-        <div className="lg:col-span-3 min-w-0 flex flex-col min-h-0 gap-3">
-          {/* Voice copilot — conversation continue LiveKit (barge-in : parler
-              pendant qu'il parle l'interrompt ; le micro reste ouvert). */}
-          {live && (
-            <section className="card p-4 space-y-2.5 shrink-0">
-              <div className="flex items-center justify-between gap-3">
+        {/* Voice copilot — sous l'étape, hauteur réglable via la poignée (barge-in :
+            parler pendant qu'il parle l'interrompt ; le micro reste ouvert). */}
+        {live && (
+          <>
+            {/* Poignée : glisser vers le haut agrandit le copilote (plus de transcript). */}
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              title="Glisser pour redimensionner"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                startVoiceResize(e.clientY);
+              }}
+              className="group shrink-0 h-3 my-1 flex items-center justify-center cursor-row-resize touch-none"
+            >
+              <span className="h-1 w-10 rounded-full bg-[var(--oct-border,#E5E2D8)] group-hover:bg-[var(--border-strong)] transition-colors" />
+            </div>
+            <section
+              style={{ height: voiceH }}
+              className="card p-4 flex flex-col min-h-0 shrink-0"
+            >
+              <div className="flex items-center justify-between gap-3 shrink-0 mb-2">
                 <h2 className="text-sm font-semibold tracking-tight">Voice copilot</h2>
-                <span className="receipt">{VOICE_STATUS_LABEL[voiceRoom.status]}</span>
+                <div className="flex items-center gap-2">
+                  {voiceRoom.status !== "off" && voiceRoom.status !== "error" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={voiceRoom.toggleMute}
+                        className="chip px-2.5 py-0.5 text-[12px]"
+                      >
+                        {voiceRoom.muted ? "Unmute" : "Mute"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={voiceRoom.disconnect}
+                        className="chip px-2.5 py-0.5 text-[12px]"
+                        style={{ color: "var(--danger)" }}
+                      >
+                        End
+                      </button>
+                    </>
+                  )}
+                  <span className="receipt">{VOICE_STATUS_LABEL[voiceRoom.status]}</span>
+                </div>
               </div>
 
               {voiceRoom.status === "off" || voiceRoom.status === "error" ? (
-                <>
+                <div className="flex-1 min-h-0 flex flex-col justify-center gap-2">
                   <button
                     type="button"
                     onClick={() => void voiceRoom.connect()}
@@ -600,37 +703,42 @@ export default function RunConsole({
                     Start conversation
                   </button>
                   {voiceRoom.error && <p className="text-[13px] text-danger">{voiceRoom.error}</p>}
-                </>
+                </div>
+              ) : voiceRoom.transcript.length > 0 ? (
+                <div ref={transcriptRef} className="flex-1 min-h-0 overflow-y-auto text-[13px] space-y-1 pr-1">
+                  {voiceRoom.transcript.map((l) => (
+                    <p key={l.id} className={l.from === "you" ? "text-muted" : undefined}>
+                      <span className="font-medium">{l.from === "you" ? "You" : "Copilot"} · </span>
+                      {l.text}
+                    </p>
+                  ))}
+                </div>
               ) : (
-                <>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={voiceRoom.toggleMute} className="chip flex-1 justify-center">
-                      {voiceRoom.muted ? "Unmute" : "Mute"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={voiceRoom.disconnect}
-                      className="chip flex-1 justify-center"
-                      style={{ color: "var(--danger)" }}
-                    >
-                      End
-                    </button>
-                  </div>
-                  {voiceRoom.transcript.length > 0 && (
-                    <div className="rounded-[10px] border border-[var(--oct-border,#E5E2D8)] bg-[var(--oct-paper-2,#F0EDE3)] px-3 py-2 text-[13px] max-h-32 overflow-y-auto space-y-1">
-                      {voiceRoom.transcript.map((l) => (
-                        <p key={l.id} className={l.from === "you" ? "text-muted" : undefined}>
-                          <span className="font-medium">{l.from === "you" ? "You" : "Copilot"} · </span>
-                          {l.text}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </>
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <p className="text-[13px] text-muted">Listening… say something to get started.</p>
+                </div>
               )}
             </section>
-          )}
+          </>
+        )}
+        </div>
 
+        {/* Poignée droite : glisser pour élargir/rétrécir capture + observations. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="Glisser pour redimensionner"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            startColResize(e.clientX, "right");
+          }}
+          className="group hidden lg:flex shrink-0 w-3 mx-0.5 items-center justify-center cursor-col-resize touch-none"
+        >
+          <span className="w-1 h-10 rounded-full bg-[var(--oct-border,#E5E2D8)] group-hover:bg-[var(--border-strong)] transition-colors" />
+        </div>
+
+        {/* ── Colonne 3 : capture + observations ── */}
+        <div className="w-full lg:w-[var(--col-right)] lg:shrink-0 min-w-0 flex flex-col min-h-0 gap-3">
           {/* Capture — un mode à la fois */}
           {live && (
             <section className="card p-4 space-y-3 shrink-0">

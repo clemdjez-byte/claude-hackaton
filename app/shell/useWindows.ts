@@ -17,6 +17,8 @@ export type WindowKind =
 
 export type WinRect = { left: number; top: number; width: number; height: number };
 
+export type WinLayout = "float" | "full" | "left" | "right" | "min";
+
 export type Win = {
   id: string;
   kind: WindowKind;
@@ -24,7 +26,7 @@ export type Win = {
   params?: Record<string, string>;
   rect: WinRect;
   z: number;
-  layout: "float" | "full";
+  layout: WinLayout;
 };
 
 /** id déterministe : kind + params triés par clé, pour dédup ("report:runId=run_1"). */
@@ -61,6 +63,7 @@ export type WindowsAction =
   | { type: "close"; id: string }
   | { type: "focus"; id: string }
   | { type: "toggleFullscreen"; id: string }
+  | { type: "setLayout"; id: string; layout: WinLayout }
   | { type: "setTitle"; id: string; title: string }
   | { type: "setRect"; id: string; rect: WinRect };
 
@@ -112,6 +115,14 @@ export function reduceWindows(state: WindowsState, action: WindowsAction): Windo
         ),
       };
     }
+    case "setLayout": {
+      const z = state.nextZ + 1;
+      return {
+        ...state,
+        nextZ: z,
+        windows: state.windows.map((w) => (w.id === action.id ? { ...w, layout: action.layout, z } : w)),
+      };
+    }
     case "setTitle":
       return {
         ...state,
@@ -134,6 +145,7 @@ export type WindowsApi = {
   close: (id: string) => void;
   focus: (id: string) => void;
   toggleFullscreen: (id: string) => void;
+  setLayout: (id: string, layout: WinLayout) => void;
   setTitle: (id: string, title: string) => void;
   setRect: (id: string, rect: WinRect) => void;
 };
@@ -149,6 +161,7 @@ export function useWindows(): WindowsApi {
   const close = useCallback((id: string) => dispatch({ type: "close", id }), []);
   const focus = useCallback((id: string) => dispatch({ type: "focus", id }), []);
   const toggleFullscreen = useCallback((id: string) => dispatch({ type: "toggleFullscreen", id }), []);
+  const setLayout = useCallback((id: string, layout: WinLayout) => dispatch({ type: "setLayout", id, layout }), []);
   const setTitle = useCallback((id: string, title: string) => dispatch({ type: "setTitle", id, title }), []);
   const setRect = useCallback((id: string, rect: WinRect) => dispatch({ type: "setRect", id, rect }), []);
 
@@ -156,5 +169,5 @@ export function useWindows(): WindowsApi {
     ? state.windows.reduce((a, b) => (a.z >= b.z ? a : b)).id
     : null;
 
-  return { windows: state.windows, activeId, open, close, focus, toggleFullscreen, setTitle, setRect };
+  return { windows: state.windows, activeId, open, close, focus, toggleFullscreen, setLayout, setTitle, setRect };
 }

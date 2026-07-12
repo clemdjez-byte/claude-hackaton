@@ -1,9 +1,11 @@
 "use client";
 
-// Panneau hub Bench — fusion de l'ancien conteneur et du tableau de bord live :
-// un seul repère, les runs (en cours et passés). Fetch au montage sur
-// /api/bench/runs (mêmes appels store que l'ancien app/bench/page.tsx),
-// navigation entre fenêtres via useWindowsContext() au lieu de <Link>.
+// Panneau Bench — deux vues internes :
+//  · "hub"  : menu d'entrée (Protocols, Live experiment) + modules à venir.
+//  · "runs" : le tableau de bord des runs (en cours + passés), atteint depuis
+//             la carte "Live experiment". Retour via "← Back to bench".
+// Fetch au montage sur /api/bench/runs (mêmes appels store que l'ancien
+// app/bench/page.tsx), navigation entre fenêtres via useWindowsContext().
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { RunOverview } from "@/lib/bench";
@@ -15,6 +17,14 @@ type RunsResponse = { inProgress: RunOverview[]; past: PastRun[] };
 // Date ISO figée (stockée) → affichage compact et déterministe (pas de tz).
 function when(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
+}
+
+function ArrowRight() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
 }
 
 function RunCard({
@@ -60,14 +70,13 @@ function RunCard({
   );
 }
 
-export default function BenchHubPanel() {
-  const { open } = useWindowsContext();
+export default function BenchHubPanel({ winId }: { winId?: string }) {
+  const { open, close } = useWindowsContext();
+  const [view, setView] = useState<"hub" | "runs">("hub");
   const [data, setData] = useState<RunsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  // Fetch pur (pas de setState dedans) : réutilisable au montage et après
-  // une mutation (toggle), sans déclencher la règle set-state-in-effect.
   const fetchRuns = useCallback(async (): Promise<RunsResponse> => {
     const res = await fetch("/api/bench/runs");
     if (!res.ok) throw new Error(`Error ${res.status}`);
@@ -96,72 +105,122 @@ export default function BenchHubPanel() {
     });
   }
 
-  if (error) return <div className="p-6 text-sm text-danger">{error}</div>;
-  if (!data) return <div className="p-6 text-sm text-muted">Loading…</div>;
-
-  return (
-    <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-8">
-      <header className="fade-in">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="eyebrow mb-3">Bench</p>
-            <h1 className="text-3xl font-semibold tracking-tight">Runs at the bench</h1>
-          </div>
-          <button type="button" onClick={() => open("protocols")} className="btn-accent shrink-0 mt-1">
-            Protocols →
-          </button>
-        </div>
-        <p className="text-base text-muted mt-3 max-w-xl" style={{ lineHeight: 1.6 }}>
-          Every experiment currently running, plus what already wrapped up. Open one to keep
-          going, or activate a protocol from the library to start a new run.
-        </p>
-      </header>
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold tracking-tight">In progress</h2>
-        {data.inProgress.length === 0 ? (
-          <div className="card p-6 fade-up">
-            <p className="text-muted text-sm">
-              Nothing running yet. Pick a protocol in your library and activate it.
-            </p>
-            <button type="button" onClick={() => open("protocols")} className="btn-accent inline-block mt-4">
-              Open protocols →
+  // ---------- Vue "runs" : Live experiment ----------
+  if (view === "runs") {
+    return (
+      <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-8">
+        <header className="fade-in">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="eyebrow mb-3">Live experiment</p>
+              <h1 className="text-3xl font-semibold tracking-tight">Runs in progress</h1>
+            </div>
+            <button type="button" onClick={() => open("protocols")} className="btn-accent shrink-0 mt-1">
+              New experiment →
             </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {data.inProgress.map((o) => (
-              <RunCard
-                key={o.run.id}
-                o={o}
-                pending={pending}
-                onOpenRun={() => open("run", { runId: o.run.id })}
-                onOpenReport={() => open("report", { runId: o.run.id })}
-                onToggle={() => toggle(o)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+          <p className="text-base text-muted mt-3 max-w-xl" style={{ lineHeight: 1.6 }}>
+            Every experiment currently running at the bench. You can have several at once. Open one
+            to keep going, or activate a protocol to start a new run.
+          </p>
+        </header>
 
-      {data.past.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold tracking-tight">Past runs</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {data.past.map((o) => (
-              <RunCard
-                key={o.run.id}
-                o={o}
-                hasReport={o.hasReport}
-                pending={pending}
-                onOpenRun={() => open("run", { runId: o.run.id })}
-                onOpenReport={() => open("report", { runId: o.run.id })}
-                onToggle={() => toggle(o)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {!data && !error && <p className="text-sm text-muted">Loading…</p>}
+
+        {data && (
+          <section className="space-y-3">
+            {data.inProgress.length === 0 ? (
+              <div className="card p-6 fade-up">
+                <p className="text-muted text-sm">
+                  Nothing running yet. Pick a protocol in your library and activate it.
+                </p>
+                <button type="button" onClick={() => open("protocols")} className="btn-accent inline-block mt-4">
+                  Open protocols →
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {data.inProgress.map((o) => (
+                  <RunCard
+                    key={o.run.id}
+                    o={o}
+                    pending={pending}
+                    onOpenRun={() => open("run", { runId: o.run.id })}
+                    onOpenReport={() => open("report", { runId: o.run.id })}
+                    onToggle={() => toggle(o)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {data && data.past.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold tracking-tight">Past runs</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {data.past.map((o) => (
+                <RunCard
+                  key={o.run.id}
+                  o={o}
+                  hasReport={o.hasReport}
+                  pending={pending}
+                  onOpenRun={() => open("run", { runId: o.run.id })}
+                  onOpenReport={() => open("report", { runId: o.run.id })}
+                  onToggle={() => toggle(o)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <button type="button" onClick={() => setView("hub")} className="text-sm text-muted hover:text-foreground">
+          ← Back to bench
+        </button>
+      </div>
+    );
+  }
+
+  // ---------- Vue "hub" : menu d'entrée ----------
+  const activeCount = data?.inProgress.length ?? 0;
+  return (
+    <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-8">
+      <h1 className="text-4xl font-semibold tracking-tight fade-in">Bench</h1>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 fade-up">
+        <button type="button" onClick={() => open("protocols")} className="bench-tile">
+          <span className="bench-tile-title">Protocols</span>
+          <ArrowRight />
+        </button>
+        <button type="button" onClick={() => setView("runs")} className="bench-tile">
+          <span className="bench-tile-title">
+            Live experiment
+            {activeCount > 0 && <span className="bench-tile-badge">{activeCount}</span>}
+          </span>
+          <ArrowRight />
+        </button>
+      </div>
+
+      <div className="card p-6 fade-up">
+        <p className="eyebrow mb-4">Coming soon</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 max-w-md">
+          {["Samples", "Chemicals", "Machines"].map((m) => (
+            <span key={m} className="flex items-center gap-3 text-base">
+              <span className="bench-soon-dot" />
+              {m}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => winId && close(winId)}
+        className="text-sm text-muted hover:text-foreground"
+      >
+        ← Back to project
+      </button>
     </div>
   );
 }

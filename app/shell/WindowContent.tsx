@@ -1,12 +1,12 @@
 "use client";
 // Routeur de panneaux — un Window ne connaît que son win.kind ; c'est ici
-// qu'on le mappe vers le composant réel. 'import' réutilise ProtocolsPanel
-// (sa section « New protocol » couvre déjà la génération depuis fichiers ou
-// prompt).
+// qu'on le mappe vers le composant réel. Deux pages protocoles distinctes :
+// 'protocols' = la bibliothèque (liste), 'import' = la création (« New protocol »).
 import type { Win } from "./useWindows";
 import ChatClient from "@/app/chat/ChatClient";
 import BenchHubPanel from "@/app/bench/BenchHubPanel";
 import ProtocolsPanel from "@/app/bench/ProtocolsPanel";
+import NewProtocolClient from "@/app/bench/NewProtocolClient";
 import ProtocolPanel from "@/app/bench/ProtocolPanel";
 import RunPanel from "@/app/bench/RunPanel";
 import ReportEditor from "@/app/bench/ReportEditor";
@@ -19,10 +19,11 @@ export function WindowContent({ win }: { win: Win }) {
     case "settings":
       return <div className="p-6 text-sm">Workspace: demo</div>;
     case "bench-hub":
-      return <BenchHubPanel />;
+      return <BenchHubPanel winId={win.id} />;
     case "protocols":
-    case "import":
       return <ProtocolsPanel />;
+    case "import":
+      return <NewProtocolClient />;
     case "protocol":
       return <ProtocolPanel pageId={win.params!.protocolId} />;
     case "run":

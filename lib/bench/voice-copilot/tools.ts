@@ -3,9 +3,15 @@
 // n'a PAS d'execute : il est joué côté navigateur (onToolCall + addToolResult).
 import { tool } from "ai";
 import { z } from "zod";
-import type { Db, Id, Ws } from "@/lib/core";
+import type { Db, Evidence, Id, Ws } from "@/lib/core";
 import { advanceStep, skipStep, stepBack, getRunContext } from "../live-bench";
-import { captureNote, captureMeasurement, captureDeviation } from "../evidence-capture";
+import {
+  captureNote,
+  captureMeasurement,
+  captureDeviation,
+  deleteEvidence,
+  listEvidence,
+} from "../evidence-capture";
 import { search } from "@/lib/retrieval";
 
 export interface VoiceToolCtx {
@@ -20,6 +26,17 @@ async function currentStepId(ctx: VoiceToolCtx): Promise<Id | undefined> {
   return rc?.currentStep?.id;
 }
 
+/** Résumé lisible d'une preuve, pour que l'agent puisse la citer/la choisir. */
+function describeEvidence(e: Evidence): string {
+  if (e.kind === "measurement" && e.measurement)
+    return e.body ?? `${e.measurement.value} ${e.measurement.unit}`;
+  if (e.kind === "deviation" && e.deviation)
+    return `[${e.deviation.severity}] «${e.deviation.expected}» → «${e.deviation.actual}»`;
+  if (e.kind === "photo") return e.body ? `photo : ${e.body}` : "photo";
+  if (e.kind === "data") return `fichier : ${e.source?.label ?? e.body ?? "données"}`;
+  return e.body ?? e.kind;
+}
+
 /** Construit les outils de l'agent pour un run donné (closures sur db/runId). */
 export function buildVoiceTools(ctx: VoiceToolCtx) {
   return {
@@ -28,9 +45,10 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
       inputSchema: z.object({}),
       execute: async () => {
         const { justCompleted, active } = await advanceStep(ctx.db, ctx.runId);
+        // index en base 1 (comme l'UI) — jamais d'« étape 0 » pour l'agent.
         return {
-          completed: justCompleted ? { index: justCompleted.protocolStepIndex, title: justCompleted.title } : null,
-          active: active ? { index: active.protocolStepIndex, title: active.title } : null,
+          completed: justCompleted ? { index: justCompleted.protocolStepIndex + 1, title: justCompleted.title } : null,
+          active: active ? { index: active.protocolStepIndex + 1, title: active.title } : null,
           finished: active === null,
         };
       },
@@ -43,7 +61,7 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
         const id = await currentStepId(ctx);
         if (!id) return { skipped: false, reason: "aucune étape en cours" };
         const s = await skipStep(ctx.db, id);
-        return { skipped: true, step: { index: s.protocolStepIndex, title: s.title } };
+        return { skipped: true, step: { index: s.protocolStepIndex + 1, title: s.title } };
       },
     }),
 
@@ -52,7 +70,7 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
       inputSchema: z.object({}),
       execute: async () => {
         const { active } = await stepBack(ctx.db, ctx.runId);
-        return { active: active ? { index: active.protocolStepIndex, title: active.title } : null };
+        return { active: active ? { index: active.protocolStepIndex + 1, title: active.title } : null };
       },
     }),
 
@@ -60,16 +78,17 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
       description:
         "Lire/consulter le détail d'une étape (passée, courante ou future) SANS la modifier ni avancer. À utiliser quand l'opérateur veut juste voir ce que contient une étape.",
       inputSchema: z.object({
-        index: z.number().int().describe("index de l'étape à consulter (0 = première)"),
+        index: z.number().int().describe("numéro de l'étape à consulter (1 = première)"),
       }),
       // Lecture seule : n'est PAS dans MUTATING_TOOLS (voice-agent/tools.ts) → ne
       // déclenche aucune resynchro ni validation. C'est le point-clé : montrer une
       // étape sans marquer les précédentes comme faites.
       execute: async ({ index }) => {
         const rc = await getRunContext(ctx.db, ctx.runId);
-        const proto = rc?.protocol.steps.find((p) => p.index === index);
+        const zeroBased = index - 1; // l'agent numérote en base 1 (comme l'UI)
+        const proto = rc?.protocol.steps.find((p) => p.index === zeroBased);
         if (!proto) return { found: false, index };
-        const runStep = rc?.steps.find((s) => s.protocolStepIndex === index);
+        const runStep = rc?.steps.find((s) => s.protocolStepIndex === zeroBased);
         return {
           index,
           title: proto.title,
@@ -77,6 +96,43 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
           status: runStep?.status ?? "pending",
           critical: proto.critical ?? false,
         };
+      },
+    }),
+
+    list_evidence: tool({
+      description:
+        "Lister les preuves déjà consignées de ce run (notes, mesures, déviations, photos, fichiers) avec leur id — indispensable avant de supprimer ou corriger une preuve, ou pour rappeler ce qui a été capturé.",
+      inputSchema: z.object({
+        kind: z
+          .enum(["note", "measurement", "deviation", "photo", "data"])
+          .optional()
+          .describe("filtrer par nature (optionnel)"),
+      }),
+      // Lecture seule → PAS dans MUTATING_TOOLS.
+      execute: async ({ kind }) => {
+        const items = await listEvidence(ctx.db, ctx.runId, kind ? { kind } : undefined);
+        return {
+          count: items.length,
+          // Plus récente en premier (comme le journal à l'écran).
+          evidence: [...items].reverse().map((e) => ({
+            id: e.id,
+            kind: e.kind,
+            summary: describeEvidence(e),
+          })),
+        };
+      },
+    }),
+
+    delete_evidence: tool({
+      description:
+        "Supprimer définitivement une preuve du journal (note, mesure, déviation, photo ou fichier). Récupère d'abord son id via list_evidence, et confirme oralement avec l'opérateur avant de supprimer.",
+      inputSchema: z.object({
+        id: z.string().describe("id de la preuve à supprimer (obtenu via list_evidence)"),
+      }),
+      execute: async ({ id }) => {
+        const removed = await deleteEvidence(ctx.db, id);
+        if (!removed) return { deleted: false, reason: "preuve introuvable" };
+        return { deleted: true, kind: removed.kind, was: describeEvidence(removed) };
       },
     }),
 

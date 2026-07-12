@@ -141,7 +141,7 @@ function buildPerformed(ctx: RunContext, evidence: Evidence[]): string {
   for (const s of ctx.steps) {
     const dur = stepDurationMin(s.startedAt, s.completedAt);
     const durTxt = dur != null ? ` (${dur} min)` : "";
-    lines.push(`Étape ${s.protocolStepIndex} « ${s.title} » : ${statusFr(s.status)}${durTxt}.`);
+    lines.push(`Étape ${s.protocolStepIndex + 1} « ${s.title} » : ${statusFr(s.status)}${durTxt}.`);
   }
   const measurements = evidence.filter((e) => e.kind === "measurement");
   if (measurements.length) {
@@ -190,8 +190,10 @@ async function buildNarrative(args: {
   deviations: string[];
 }): Promise<z.infer<typeof NarrativeSchema>> {
   const { planned, performed, observed, deviations } = args;
-  if (!hasLlmKey()) {
-    // Repli déterministe (hors-ligne) : jamais de chiffre inventé.
+  // Repli déterministe : jamais de chiffre inventé. Utilisé sans clé LLM,
+  // mais aussi si l'appel LLM échoue (clé invalide, réseau, quota…) — un
+  // rapport sans interprétation rédigée vaut mieux que pas de rapport.
+  const fallback = (): z.infer<typeof NarrativeSchema> => {
     const crit = deviations.filter((d) => d.startsWith("[critique")).length;
     return {
       interpretation:
@@ -204,14 +206,16 @@ async function buildNarrative(args: {
           : ["Les contrôles (NTC, réplicats) sont-ils conformes ?"],
       nextActions: ["Valider le rapport", "Vérifier les contrôles qualité (NTC, melt curve, réplicats)"],
     };
-  }
-  return generateObjectFor("report", {
-    system: `Tu rédiges l'INTERPRÉTATION d'un run de laboratoire, en français, ton de chercheur senior.
+  };
+  if (!hasLlmKey()) return fallback();
+  try {
+    return await generateObjectFor("report", {
+      system: `Tu rédiges l'INTERPRÉTATION d'un run de laboratoire, en français, ton de chercheur senior.
 Règles absolues :
 - Ne t'appuie que sur les FAITS fournis ci-dessous. N'invente AUCUN chiffre, aucune mesure, aucune source.
 - Étiquette clairement qu'il s'agit d'une interprétation à valider par un humain.
 - Sois prudent et concis. Distingue observation et hypothèse.`,
-    prompt: `FAITS DU RUN :
+      prompt: `FAITS DU RUN :
 
 ## Prévu
 ${planned}
@@ -226,8 +230,13 @@ ${observed}
 ${deviations.length ? deviations.join("\n") : "aucune"}
 
 Produis: interpretation (prose), openQuestions (questions ouvertes), nextActions (prochaines actions).`,
-    schema: NarrativeSchema,
-  });
+      schema: NarrativeSchema,
+    });
+  } catch {
+    // L'appel LLM a échoué (clé invalide, réseau, quota…) : on retombe sur le
+    // repli déterministe plutôt que de perdre tout le rapport.
+    return fallback();
+  }
 }
 
 // ── Rendu HTML (document Tiptap-compatible) ─────────────────────────────

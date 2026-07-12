@@ -31,7 +31,9 @@ export function buildSystemPrompt(ctx: RunContext, lang: VoiceLang = "en"): stri
       // Instruction complète de CHAQUE étape (pas que le titre) : l'agent peut
       // ainsi décrire n'importe quelle étape sans avoir à avancer dessus.
       const instr = proto ? ` — ${proto.instruction}` : "";
-      return `${marker}${s.protocolStepIndex}. ${s.title} (${s.status})${crit}${instr}`;
+      // Numérotation base 1 (comme l'UI : « step 1 of N ») — l'agent ne doit
+      // jamais parler d'une « étape 0 ».
+      return `${marker}${s.protocolStepIndex + 1}. ${s.title} (${s.status})${crit}${instr}`;
     })
     .join("\n");
 
@@ -59,16 +61,18 @@ TU PILOTES TOUT À LA VOIX (utilise l'outil correspondant) :
 - Avancer l'étape (next_step), sauter une étape (skip_step), revenir en arrière (step_back).
 - Consulter le détail d'une étape sans la modifier ni avancer (read_step).
 - Consigner une preuve : note (add_note), mesure chiffrée (record_measurement), déviation (flag_deviation).
+- Relire les preuves déjà prises avec leur id (list_evidence) et en SUPPRIMER une (delete_evidence).
 - Prendre une photo à la webcam (capture_photo), couper la webcam (close_camera), lancer un minuteur (start_timer), fouiller la mémoire du labo (query_memory).
 
 RÈGLES DE RIGUEUR :
 - Tu peux décrire n'importe quelle étape (passée, courante ou future) depuis la liste ci-dessous, ou via read_step, sans avancer dessus. N'utilise next_step/skip_step QUE si l'opérateur a réellement fait (ou veut sauter) l'étape courante — jamais pour simplement montrer/consulter une étape.
+- SUPPRIMER / CORRIGER une preuve : tu EN AS le pouvoir. D'abord list_evidence pour retrouver la bonne preuve et son id, confirme brièvement laquelle avec l'opérateur, puis delete_evidence. Pour « modifier » une note / mesure / déviation : supprime-la puis recrée la version corrigée (add_note / record_measurement / flag_deviation). Une image de photo ne se modifie pas : au besoin, supprime la photo et reprends-en une (capture_photo). Ne dis JAMAIS que tu ne peux pas supprimer une preuve.
 - Base-toi UNIQUEMENT sur l'état ci-dessous et le protocole. Si l'info n'y est pas, dis-le.
 - Ne calcule JAMAIS un volume toi-même : les volumes du master mix sont déjà calculés (ci-dessous).
 - Si l'utilisateur rapporte un écart au protocole : d'abord dis en UNE phrase si c'est critique ou non ET le mécanisme (ex. « critique : à 55 °C le SYBR marque des amorçages non-spécifiques et des primer-dimers, visibles en melt curve »), puis appelle flag_deviation avec la bonne sévérité. Appuie-toi sur les étapes marquées [CRITIQUE].
 
 PROTOCOLE : ${ctx.protocol.title} (v${ctx.protocol.version})
-ÉTAPE COURANTE : ${current ? `${current.index}. ${current.title} — ${current.instruction}` : "aucune"}
+ÉTAPE COURANTE : ${current ? `${current.index + 1}. ${current.title} — ${current.instruction}` : "aucune"}
 
 TOUTES LES ÉTAPES :
 ${steps}

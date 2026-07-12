@@ -1,18 +1,17 @@
 "use client";
 
-// Panneau explorateur de fichiers — vue Finder mono-panneau : navigation par
-// dossiers (Précédent/Suivant/Remonter + fil d'Ariane cliquable), liste du
-// dossier courant (sous-dossiers puis rapports), créer/renommer/supprimer les
-// dossiers, déplacer par glisser-déposer natif (HTML5) sur une ligne-dossier
-// ou une miette du fil d'Ariane. Les rapports n'ont pas de nom éditable ici —
-// l'API des rapports (PATCH /api/files/reports/[id]) ne porte que `folderId`,
-// pas de titre : seuls leur emplacement et leur suppression sont pilotés
-// d'ici (cf. app/api/files/reports/[id]/route.ts).
-import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
+// Panneau explorateur de fichiers — arborescence dépliable (façon Finder en vue
+// liste) : chaque dossier se déplie/replie sur place via son chevron, ses
+// sous-dossiers et rapports apparaissent indentés. Créer / renommer / supprimer
+// les dossiers, recherche plein-texte, déplacer par glisser-déposer natif
+// (HTML5) sur une ligne-dossier. Les rapports n'ont pas de nom éditable ici —
+// l'API des rapports (PATCH /api/files/reports/[id]) ne porte que `folderId` :
+// seuls leur emplacement et leur suppression sont pilotés d'ici.
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
-import { childFolders, breadcrumb, canMoveFolder } from "@/app/files/tree";
+import { childFolders, breadcrumb } from "@/app/files/tree";
 import type { FolderMeta, PageMeta } from "./types";
-import { FolderRowIcon, ReportRowIcon, NavArrowIcon, PencilIcon } from "./icons";
+import { FolderRowIcon, ReportRowIcon, ChevronIcon, PencilIcon, NewFolderIcon, NewFileIcon } from "./icons";
 
 type FilesResponse = { folders: FolderMeta[]; reports: PageMeta[] };
 type DragItem = { kind: "folder" | "report"; id: string };
@@ -29,19 +28,15 @@ type DropProps = {
   onDrop: (e: DragEvent<HTMLElement>) => void;
 };
 
-// Date ISO figée (stockée) → affichage compact et déterministe (pas de tz).
-function when(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ");
-}
+const INDENT = 18; // px par niveau de profondeur
 
 export default function FilesPanel() {
   const { open } = useWindowsContext();
   const [data, setData] = useState<FilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Historique de navigation : pile de folderId (null = racine) + index courant.
-  const [history, setHistory] = useState<(string | null)[]>([null]);
-  const [historyIndex, setHistoryIndex] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
 
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -50,14 +45,9 @@ export default function FilesPanel() {
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget>(null);
 
-  // Un blur natif peut se déclencher APRÈS un Échap (le champ démonté perd le
-  // focus) : ce garde évite que la commande d'annulation soit suivie d'une
-  // validation fantôme. Un seul champ inline actif à la fois (create XOR
-  // rename), donc un seul garde suffit.
+  // Voir FilesPanel d'origine : garde-fou contre le blur fantôme après Échap.
   const editGuardRef = useRef(false);
 
-  // Fetch pur (pas de setState dedans) : réutilisable au montage et après
-  // chaque mutation, sans déclencher la règle set-state-in-effect.
   const fetchFiles = useCallback(async (): Promise<FilesResponse> => {
     const res = await fetch("/api/files");
     if (!res.ok) throw new Error(`Error ${res.status}`);
@@ -92,40 +82,17 @@ export default function FilesPanel() {
 
   const folders = data?.folders ?? [];
   const reports = data?.reports ?? [];
-  const currentFolderId = history[historyIndex] ?? null;
-  const currentFolder = folders.find((f) => f.id === currentFolderId) ?? null;
-  const ancestors = breadcrumb(folders, currentFolderId);
-  const crumbs: { id: string | null; name: string }[] = [
-    { id: null, name: "Home" },
-    ...ancestors.map((f) => ({ id: f.id, name: f.name })),
-    ...(currentFolder ? [{ id: currentFolder.id, name: currentFolder.name }] : []),
-  ];
-  const visibleFolders = childFolders(folders, currentFolderId);
-  const visibleReports = reports
-    .filter((r) => (r.folderId ?? null) === currentFolderId)
-    .sort((a, b) => a.title.localeCompare(b.title));
 
-  const canBack = historyIndex > 0;
-  const canForward = historyIndex < history.length - 1;
-  const canUp = currentFolderId !== null;
-
-  function navigateTo(folderId: string | null) {
-    if (folderId === currentFolderId) return;
-    const next = [...history.slice(0, historyIndex + 1), folderId];
-    setHistory(next);
-    setHistoryIndex(next.length - 1);
-  }
-  function goBack() {
-    if (canBack) setHistoryIndex((i) => i - 1);
-  }
-  function goForward() {
-    if (canForward) setHistoryIndex((i) => i + 1);
-  }
-  function goUp() {
-    if (currentFolder) navigateTo(currentFolder.parentId);
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
-  // --- Créer / renommer / supprimer ---
+  // --- Créer / renommer / supprimer (dossiers créés à la racine) ---
 
   function startCreateFolder() {
     setRenaming(null);
@@ -148,7 +115,7 @@ export default function FilesPanel() {
       const res = await fetch("/api/files/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, parentId: currentFolderId }),
+        body: JSON.stringify({ name, parentId: null }),
       });
       if (!res.ok) throw new Error(`Error ${res.status}`);
       await refresh();
@@ -212,16 +179,13 @@ export default function FilesPanel() {
 
   // --- Glisser-déposer (natif HTML5) ---
 
-  function canAcceptDrop(item: DragItem, targetFolderId: string | null): boolean {
-    if (item.kind === "folder") return canMoveFolder(folders, item.id, targetFolderId);
-    return true;
-  }
-
   async function moveItem(item: DragItem, targetFolderId: string | null) {
     try {
       if (item.kind === "folder") {
         const folder = folders.find((f) => f.id === item.id);
-        if (!folder || folder.parentId === targetFolderId) return;
+        if (!folder || folder.parentId === targetFolderId || item.id === targetFolderId) return;
+        // interdit de déposer un dossier dans un de ses descendants
+        if (targetFolderId && breadcrumb(folders, targetFolderId).some((a) => a.id === item.id)) return;
         const res = await fetch(`/api/files/folders/${item.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -244,8 +208,7 @@ export default function FilesPanel() {
     }
   }
 
-  function dragSourceProps(item: DragItem, enabled: boolean): DragProps {
-    if (!enabled) return { draggable: false };
+  function dragSourceProps(item: DragItem): DragProps {
     return {
       draggable: true,
       onDragStart: (e) => {
@@ -263,7 +226,7 @@ export default function FilesPanel() {
   function dropTargetProps(targetFolderId: string | null): DropProps {
     return {
       onDragOver: (e) => {
-        if (!dragItem || !canAcceptDrop(dragItem, targetFolderId)) return;
+        if (!dragItem) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         setDropTarget({ folderId: targetFolderId });
@@ -276,7 +239,7 @@ export default function FilesPanel() {
         const item = dragItem;
         setDragItem(null);
         setDropTarget(null);
-        if (item && canAcceptDrop(item, targetFolderId)) void moveItem(item, targetFolderId);
+        if (item) void moveItem(item, targetFolderId);
       },
     };
   }
@@ -284,282 +247,255 @@ export default function FilesPanel() {
   if (!data && !error) return <div className="p-6 text-sm text-muted">Loading…</div>;
   if (!data && error) return <div className="p-6 text-sm text-danger">{error}</div>;
 
+  const q = query.trim().toLowerCase();
+  const rootFolders = childFolders(folders, null);
+  const rootReports = reports.filter((r) => (r.folderId ?? null) === null).sort((a, b) => a.title.localeCompare(b.title));
+  const isEmpty = rootFolders.length === 0 && rootReports.length === 0 && !creatingFolder;
+
+  const ctx: TreeCtx = {
+    folders,
+    reports,
+    expanded,
+    toggle,
+    renaming,
+    setRenameValue: (v) => setRenaming((r) => (r ? { ...r, value: v } : r)),
+    commitRename: () => void commitRenameFolder(),
+    cancelRename: cancelRenameFolder,
+    startRename: startRenameFolder,
+    deleteFolder: (f) => void deleteFolder(f),
+    openReport: (r) => (r.runId ? open("report", { runId: r.runId }) : undefined),
+    deleteReport: (r) => void deleteReport(r),
+    dragItem,
+    dropTarget,
+    dragSourceProps,
+    dropTargetProps,
+  };
+
+  const searchMatches = q
+    ? [
+        ...folders.filter((f) => f.name.toLowerCase().includes(q)).map((f) => ({ kind: "folder" as const, item: f })),
+        ...reports.filter((r) => r.title.toLowerCase().includes(q)).map((r) => ({ kind: "report" as const, item: r })),
+      ]
+    : [];
+
   return (
-    <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-4">
-      <header className="fade-in">
-        <p className="eyebrow mb-3">Files</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-base text-muted mt-3 max-w-xl" style={{ lineHeight: 1.6 }}>
-          Every report written to this lab, organized into folders. Open one to view it in a window.
-        </p>
-      </header>
-
-      {error && <p className="text-sm text-danger">{error}</p>}
-
-      <div className="card overflow-hidden fade-up">
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
-          <div className="flex items-center gap-1 shrink-0">
-            <NavButton label="Back" disabled={!canBack} onClick={goBack}>
-              <NavArrowIcon dir="left" />
-            </NavButton>
-            <NavButton label="Forward" disabled={!canForward} onClick={goForward}>
-              <NavArrowIcon dir="right" />
-            </NavButton>
-            <NavButton label="Up one level" disabled={!canUp} onClick={goUp}>
-              <NavArrowIcon dir="up" />
-            </NavButton>
-          </div>
-
-          <nav className="flex items-center gap-1 min-w-0 flex-1 text-sm overflow-hidden" aria-label="Breadcrumb">
-            {crumbs.map((c, i) => (
-              <span key={c.id ?? "__root__"} className="flex items-center gap-1 min-w-0">
-                {i > 0 && <span className="text-muted-soft shrink-0">›</span>}
-                <Crumb
-                  label={c.name}
-                  active={i === crumbs.length - 1}
-                  isOver={dropTarget !== null && dropTarget.folderId === c.id}
-                  onClick={() => navigateTo(c.id)}
-                  dropProps={dropTargetProps(c.id)}
-                />
-              </span>
-            ))}
-          </nav>
-
-          <button type="button" className="chip shrink-0" onClick={startCreateFolder}>
-            New folder
+    <div className="files-panel">
+      <div className="files-toolbar" {...dropTargetProps(null)}>
+        <nav className="files-crumbs" aria-label="Breadcrumb">
+          <span className="files-crumb muted">Workspace</span>
+          <span className="files-crumb-sep">›</span>
+          <span className="files-crumb current">Files</span>
+        </nav>
+        <div className="files-tools">
+          <input
+            className="files-search"
+            placeholder="Search files…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <button type="button" className="files-tool-btn" onClick={startCreateFolder} aria-label="New folder" title="New folder">
+            <NewFolderIcon />
           </button>
+          <span className="files-tool-btn soon" aria-disabled title="Reports come from experiments">
+            <NewFileIcon />
+          </span>
         </div>
+      </div>
 
-        <div>
-          {creatingFolder && (
-            <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border">
-              <FolderRowIcon />
-              <input
-                autoFocus
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onBlur={() => void commitCreateFolder()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") cancelCreateFolder();
-                }}
-                placeholder="Folder name"
-                className="input-field flex-1 min-w-0 px-2 py-1 text-sm"
-              />
-            </div>
-          )}
+      {error && <p className="px-5 py-2 text-sm text-danger">{error}</p>}
 
-          {visibleFolders.length === 0 && visibleReports.length === 0 && !creatingFolder ? (
-            <p className="px-4 py-10 text-sm text-muted text-center">This folder is empty.</p>
+      <div className="files-tree">
+        {q ? (
+          searchMatches.length === 0 ? (
+            <p className="files-empty">No match for “{query}”.</p>
           ) : (
-            <>
-              {visibleFolders.map((folder) => (
-                <FolderRow
-                  key={folder.id}
-                  folder={folder}
-                  isRenaming={renaming?.id === folder.id}
-                  renameValue={renaming?.id === folder.id ? renaming.value : folder.name}
-                  onRenameChange={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
-                  onCommitRename={() => void commitRenameFolder()}
-                  onCancelRename={cancelRenameFolder}
-                  isOver={dropTarget !== null && dropTarget.folderId === folder.id}
-                  dragProps={dragSourceProps({ kind: "folder", id: folder.id }, renaming?.id !== folder.id)}
-                  dropProps={dropTargetProps(folder.id)}
-                  onOpen={() => navigateTo(folder.id)}
-                  onStartRename={() => startRenameFolder(folder)}
-                  onDelete={() => void deleteFolder(folder)}
+            searchMatches.map(({ kind, item }) =>
+              kind === "folder" ? (
+                <div key={`f-${item.id}`} className="tree-row" style={{ paddingLeft: 14 }}>
+                  <span className="tree-chevron-space" />
+                  <FolderRowIcon />
+                  <span className="tree-name">{item.name}</span>
+                </div>
+              ) : (
+                <button
+                  key={`r-${item.id}`}
+                  type="button"
+                  className="tree-row report"
+                  style={{ paddingLeft: 14 }}
+                  onClick={() => item.runId && open("report", { runId: item.runId })}
+                >
+                  <span className="tree-chevron-space" />
+                  <ReportRowIcon />
+                  <span className="tree-name">{item.title}</span>
+                </button>
+              )
+            )
+          )
+        ) : (
+          <>
+            {creatingFolder && (
+              <div className="tree-row" style={{ paddingLeft: 14 }}>
+                <span className="tree-chevron-space" />
+                <FolderRowIcon />
+                <input
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onBlur={() => void commitCreateFolder()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") cancelCreateFolder();
+                  }}
+                  placeholder="Folder name"
+                  className="tree-input"
                 />
-              ))}
-              {visibleReports.map((report) => (
-                <ReportRow
-                  key={report.id}
-                  report={report}
-                  dragProps={dragSourceProps({ kind: "report", id: report.id }, true)}
-                  onOpen={report.runId ? () => open("report", { runId: report.runId! }) : undefined}
-                  onDelete={() => void deleteReport(report)}
-                />
-              ))}
-            </>
-          )}
-        </div>
+              </div>
+            )}
+            {isEmpty ? (
+              <p className="files-empty">This workspace has no files yet.</p>
+            ) : (
+              <>
+                {rootFolders.map((f) => (
+                  <TreeFolder key={f.id} folder={f} depth={0} ctx={ctx} />
+                ))}
+                {rootReports.map((r) => (
+                  <TreeReport key={r.id} report={r} depth={0} ctx={ctx} />
+                ))}
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function NavButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="tbtn disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-    >
-      {children}
-    </button>
-  );
-}
+type TreeCtx = {
+  folders: FolderMeta[];
+  reports: PageMeta[];
+  expanded: Set<string>;
+  toggle: (id: string) => void;
+  renaming: RenameTarget;
+  setRenameValue: (v: string) => void;
+  commitRename: () => void;
+  cancelRename: () => void;
+  startRename: (f: FolderMeta) => void;
+  deleteFolder: (f: FolderMeta) => void;
+  openReport: (r: PageMeta) => void;
+  deleteReport: (r: PageMeta) => void;
+  dragItem: DragItem | null;
+  dropTarget: DropTarget;
+  dragSourceProps: (item: DragItem) => DragProps;
+  dropTargetProps: (folderId: string | null) => DropProps;
+};
 
-function Crumb({
-  label,
-  active,
-  isOver,
-  onClick,
-  dropProps,
-}: {
-  label: string;
-  active: boolean;
-  isOver: boolean;
-  onClick: () => void;
-  dropProps: DropProps;
-}) {
+function TreeFolder({ folder, depth, ctx }: { folder: FolderMeta; depth: number; ctx: TreeCtx }) {
+  const isOpen = ctx.expanded.has(folder.id);
+  const isRenaming = ctx.renaming?.id === folder.id;
+  const isOver = ctx.dropTarget?.folderId === folder.id;
+  const subFolders = childFolders(ctx.folders, folder.id);
+  const subReports = ctx.reports
+    .filter((r) => (r.folderId ?? null) === folder.id)
+    .sort((a, b) => a.title.localeCompare(b.title));
+
   return (
-    <span
-      {...dropProps}
-      className={`inline-flex rounded px-1 py-0.5 ${isOver ? "bg-accent-soft ring-1 ring-accent" : ""}`}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className={`truncate cursor-pointer ${
-          active ? "font-semibold text-foreground" : "text-muted hover:text-foreground"
-        }`}
+    <>
+      <div
+        className={`tree-row folder${isOpen ? " open" : ""}${isOver ? " drop-over" : ""}`}
+        style={{ paddingLeft: 14 + depth * INDENT }}
+        {...(isRenaming ? {} : ctx.dragSourceProps({ kind: "folder", id: folder.id }))}
+        {...ctx.dropTargetProps(folder.id)}
+        onClick={() => !isRenaming && ctx.toggle(folder.id)}
       >
-        {label}
-      </button>
-    </span>
+        <span className="tree-chevron">
+          <ChevronIcon open={isOpen} />
+        </span>
+        <FolderRowIcon />
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={ctx.renaming!.value}
+            onChange={(e) => ctx.setRenameValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={ctx.commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") ctx.cancelRename();
+            }}
+            className="tree-input"
+          />
+        ) : (
+          <span className="tree-name">{folder.name}</span>
+        )}
+        {!isRenaming && (
+          <div className="tree-actions">
+            <button
+              type="button"
+              aria-label="Rename folder"
+              title="Rename"
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.startRename(folder);
+              }}
+            >
+              <PencilIcon />
+            </button>
+            <button
+              type="button"
+              aria-label="Delete folder"
+              title="Delete"
+              className="danger"
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.deleteFolder(folder);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+      {isOpen && (
+        <>
+          {subFolders.map((sf) => (
+            <TreeFolder key={sf.id} folder={sf} depth={depth + 1} ctx={ctx} />
+          ))}
+          {subReports.map((sr) => (
+            <TreeReport key={sr.id} report={sr} depth={depth + 1} ctx={ctx} />
+          ))}
+          {subFolders.length === 0 && subReports.length === 0 && (
+            <p className="tree-empty" style={{ paddingLeft: 14 + (depth + 1) * INDENT + 20 }}>
+              Empty
+            </p>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
-function FolderRow({
-  folder,
-  isRenaming,
-  renameValue,
-  onRenameChange,
-  onCommitRename,
-  onCancelRename,
-  isOver,
-  dragProps,
-  dropProps,
-  onOpen,
-  onStartRename,
-  onDelete,
-}: {
-  folder: FolderMeta;
-  isRenaming: boolean;
-  renameValue: string;
-  onRenameChange: (v: string) => void;
-  onCommitRename: () => void;
-  onCancelRename: () => void;
-  isOver: boolean;
-  dragProps: DragProps;
-  dropProps: DropProps;
-  onOpen: () => void;
-  onStartRename: () => void;
-  onDelete: () => void;
-}) {
+function TreeReport({ report, depth, ctx }: { report: PageMeta; depth: number; ctx: TreeCtx }) {
+  const canOpen = Boolean(report.runId);
   return (
     <div
-      className={`group flex items-center gap-3 px-4 py-2.5 border-b border-border cursor-pointer hover:bg-surface-2 ${
-        isOver ? "bg-accent-soft ring-1 ring-inset ring-accent" : ""
-      }`}
-      {...dragProps}
-      {...dropProps}
-      onClick={() => !isRenaming && onOpen()}
+      className={`tree-row report${canOpen ? "" : " disabled"}`}
+      style={{ paddingLeft: 14 + depth * INDENT }}
+      {...ctx.dragSourceProps({ kind: "report", id: report.id })}
+      onClick={() => canOpen && ctx.openReport(report)}
     >
-      <FolderRowIcon />
-      {isRenaming ? (
-        <input
-          autoFocus
-          value={renameValue}
-          onChange={(e) => onRenameChange(e.target.value)}
-          onClick={(e) => e.stopPropagation()}
-          onBlur={onCommitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") onCancelRename();
-          }}
-          className="input-field flex-1 min-w-0 px-2 py-1 text-sm"
-        />
-      ) : (
-        <span className="flex-1 min-w-0 truncate text-sm">{folder.name}</span>
-      )}
-      {!isRenaming && (
-        <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            aria-label="Rename folder"
-            title="Rename"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStartRename();
-            }}
-            className="text-muted hover:text-foreground px-1"
-          >
-            <PencilIcon />
-          </button>
-          <button
-            type="button"
-            aria-label="Delete folder"
-            title="Delete"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="text-muted hover:text-danger text-xs px-1"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ReportRow({
-  report,
-  dragProps,
-  onOpen,
-  onDelete,
-}: {
-  report: PageMeta;
-  dragProps: DragProps;
-  onOpen?: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div
-      className={`group flex items-center gap-3 px-4 py-2.5 border-b border-border hover:bg-surface-2 ${
-        onOpen ? "cursor-pointer" : "cursor-default opacity-70"
-      }`}
-      {...dragProps}
-      onClick={onOpen}
-    >
+      <span className="tree-chevron-space" />
       <ReportRowIcon />
-      <span className="flex-1 min-w-0 truncate text-sm">{report.title}</span>
-      <span className="receipt shrink-0">{when(report.createdAt)}</span>
-      <div className="hidden group-hover:flex items-center gap-1 shrink-0">
+      <span className="tree-name">{report.title}</span>
+      <div className="tree-actions">
         <button
           type="button"
           aria-label="Delete report"
           title="Delete"
+          className="danger"
           onClick={(e) => {
             e.stopPropagation();
-            onDelete();
+            ctx.deleteReport(report);
           }}
-          className="text-muted hover:text-danger text-xs px-1"
         >
           ✕
         </button>

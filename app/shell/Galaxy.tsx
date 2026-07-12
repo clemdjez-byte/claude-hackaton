@@ -20,7 +20,7 @@ function cssVar(name: string, fallback: string): string {
   return v || fallback;
 }
 
-export function Galaxy() {
+export function Galaxy({ onLoad }: { onLoad?: (nodeCount: number) => void } = {}) {
   const { open } = useWindowsContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<GalaxyResponse | null>(null);
@@ -32,7 +32,10 @@ export function Galaxy() {
     fetch("/api/galaxy")
       .then((res) => (res.ok ? (res.json() as Promise<GalaxyResponse>) : Promise.reject(new Error(`Error ${res.status}`))))
       .then((body) => {
-        if (!cancelled) setData(body);
+        if (!cancelled) {
+          setData(body);
+          onLoad?.(body.nodes.length);
+        }
       })
       .catch(() => {
         /* best-effort — pas de galaxie plutôt qu'un bureau cassé */
@@ -40,6 +43,8 @@ export function Galaxy() {
     return () => {
       cancelled = true;
     };
+    // onLoad est stable côté appelant (useCallback) ; on ne re-fetch qu'au montage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -49,9 +54,9 @@ export function Galaxy() {
     if (!ctx) return;
 
     const nodeColor: Record<GNode["kind"], string> = {
-      protocol: cssVar("--oct-forest", "#0A4F26"),
-      run: cssVar("--oct-aqua", "#0F9DAE"),
-      report: cssVar("--oct-leaf", "#7FE0A3"),
+      protocol: cssVar("--oct-forest", "#A11250"),
+      run: cssVar("--oct-aqua", "#FF7A2B"),
+      report: cssVar("--oct-leaf", "#FFA3C1"),
     };
     const labelColor = cssVar("--foreground", "#1E1E1E");
 

@@ -28,6 +28,7 @@ export type AiToolLike = {
 // Outils dont l'état modifié doit être répercuté (prompt de l'agent + refresh UI).
 const MUTATING_TOOLS = new Set([
   "next_step", "skip_step", "step_back", "add_note", "record_measurement", "flag_deviation",
+  "delete_evidence",
 ]);
 
 export function buildExecute(name: string, aiTool: AiToolLike, deps: ToolDeps) {

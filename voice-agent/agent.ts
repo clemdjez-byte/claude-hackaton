@@ -102,7 +102,16 @@ export default defineAgent({
       turnDetection: "vad",
     });
 
-    await session.start({ agent, room: ctx.room });
+    // deleteRoomOnClose : quand l'opérateur clique End, la session agent se
+    // ferme (closeOnDisconnect) et la room doit MOURIR avec elle. Sinon la
+    // room vide survit (empty_timeout) et un nouveau "Start conversation"
+    // la rejoint sans déclencher de dispatch d'agent (le dispatch automatique
+    // n'a lieu qu'à la création de room) → "waiting for agent…" sans fin.
+    await session.start({
+      agent,
+      room: ctx.room,
+      inputOptions: { deleteRoomOnClose: true },
+    });
     // Premier message TOUJOURS en anglais (langue par défaut du copilote) ;
     // il s'adapte ensuite à la langue de l'opérateur (cf. buildSystemPrompt).
     session.say("Copilot ready.");

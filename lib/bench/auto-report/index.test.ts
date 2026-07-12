@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { type Db } from "@/lib/core";
+import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { configureLlm, type Db } from "@/lib/core";
 import { createDb } from "@/lib/core/sqlite";
 import { seedReferenceProtocol } from "../protocol-studio";
 import { startRun, advanceStep, completeRun } from "../live-bench";
@@ -12,6 +12,10 @@ beforeAll(() => {
   process.env.FEATURE_EVIDENCE_CAPTURE = "true";
   process.env.FEATURE_AUTO_REPORT = "true";
   delete process.env.ANTHROPIC_API_KEY; // force le repli déterministe hors-ligne
+});
+
+afterEach(() => {
+  configureLlm(null); // restaure le provider par défaut après chaque test
 });
 
 async function runWithEvidence(d: Db) {
@@ -66,6 +70,27 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const md = await exportReportMarkdown(d, runId);
     expect(md).toContain("# Rapport");
     expect(md).toContain("Réellement fait");
+    d.close();
+  });
+
+  it("repli déterministe aussi quand la clé existe mais que l'appel LLM échoue (ex: clé invalide → 401)", async () => {
+    configureLlm({
+      hasLlmKey: () => true,
+      modelFor: () => {
+        throw new Error("non utilisé dans ce test");
+      },
+      generateObjectFor: async () => {
+        throw new Error("401 invalid x-api-key");
+      },
+      generateProse: async () => {
+        throw new Error("401 invalid x-api-key");
+      },
+    });
+    const d = createDb(":memory:");
+    const runId = await runWithEvidence(d);
+    const report = await generateReport(d, runId); // ne doit PAS jeter
+    expect(report.html).toContain("Interprétation");
+    expect(report.html.toLowerCase()).toContain("valider");
     d.close();
   });
 

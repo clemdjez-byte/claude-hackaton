@@ -75,7 +75,8 @@ describe("Voice Copilot", () => {
       status: s.status,
     }));
 
-    const res = (await tools.read_step.execute!({ index: 3 }, opts)) as {
+    // L'agent numérote en base 1 : « étape 4 » = protocolStepIndex 3 (interne).
+    const res = (await tools.read_step.execute!({ index: 4 }, opts)) as {
       index: number;
       title: string;
       instruction: string;
@@ -83,7 +84,7 @@ describe("Voice Copilot", () => {
       critical: boolean;
     };
     const proto3 = ctx.protocol.steps.find((p) => p.index === 3)!;
-    expect(res.index).toBe(3);
+    expect(res.index).toBe(4);
     expect(res.title).toBe(proto3.title);
     expect(res.instruction).toBe(proto3.instruction);
     expect(res.status).toBe("pending"); // étape future : toujours en attente
@@ -112,7 +113,8 @@ describe("Voice Copilot", () => {
     const ctx = await seededRun(d);
     const tools = buildVoiceTools({ db: d, ws: "lab1", runId: ctx.run.id, operator: "u1" });
     const res = (await tools.next_step.execute!({}, opts)) as { active: { index: number } | null };
-    expect(res.active?.index).toBe(1);
+    // base 1 : après la 1re étape, l'active est protocolStepIndex 1 → affichée « 2 ».
+    expect(res.active?.index).toBe(2);
     d.close();
   });
 
