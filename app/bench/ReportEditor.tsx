@@ -30,6 +30,16 @@ export default function ReportEditor({ runId }: { runId: string }) {
   // Promesse du PATCH en vol : si le debounce a déjà tiré, save.flush()
   // renvoie undefined → on doit aussi attendre cette promesse dans flushSave.
   const inflightRef = useRef<Promise<unknown> | null>(null);
+  // Miroir de saveState lisible en dehors du rendu : handleSign lit ça juste
+  // après avoir attendu flushSave() pour voir un échec survenu PENDANT cet
+  // await (un `saveState` lu par closure resterait figé sur sa valeur au
+  // moment où handleSign a démarré).
+  const saveStateRef = useRef<SaveState>("idle");
+
+  function applySaveState(s: SaveState) {
+    saveStateRef.current = s;
+    setSaveState(s);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +66,7 @@ export default function ReportEditor({ runId }: { runId: string }) {
   }, [runId]);
 
   const save = useDebouncedCallback(async () => {
-    setSaveState("saving");
+    applySaveState("saving");
     const p = (async () => {
       const res = await fetch(`/api/bench/report/${runId}/draft`, {
         method: "PATCH",
@@ -68,9 +78,9 @@ export default function ReportEditor({ runId }: { runId: string }) {
     inflightRef.current = p;
     try {
       await p;
-      setSaveState("saved");
+      applySaveState("saved");
     } catch {
-      setSaveState("error");
+      applySaveState("error");
     } finally {
       if (inflightRef.current === p) inflightRef.current = null;
     }
@@ -98,6 +108,14 @@ export default function ReportEditor({ runId }: { runId: string }) {
     }
     setActionError(null);
     await flushSave();
+    // Re-check après le flush : un échec réseau survenu PENDANT cet await
+    // met saveState à "error" via applySaveState, mais la variable locale
+    // `saveState` de ce rendu resterait figée sur sa valeur d'avant l'appel.
+    // saveStateRef.current, lui, est à jour.
+    if (saveStateRef.current === "error") {
+      setActionError("Last autosave failed — fix your connection and wait for a successful save before signing.");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch(`/api/bench/report/${runId}/sign`, { method: "POST" });
@@ -109,7 +127,7 @@ export default function ReportEditor({ runId }: { runId: string }) {
       htmlRef.current = signed.html;
       setHasHtml(Boolean(signed.html.trim()));
       setReport(signed);
-      setSaveState("idle");
+      applySaveState("idle");
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Could not sign the report.");
     } finally {
@@ -131,7 +149,7 @@ export default function ReportEditor({ runId }: { runId: string }) {
       htmlRef.current = draft.html;
       setHasHtml(Boolean(draft.html.trim()));
       setReport(draft);
-      setSaveState("idle");
+      applySaveState("idle");
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Could not open a new revision.");
     } finally {
