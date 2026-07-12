@@ -1,56 +1,72 @@
 "use client";
-// Dock vertical droit — contrôle de vue du graphe de connaissances (screen
-// accueil). Visuel uniquement pour l'instant : le graphe est statique, donc les
-// paliers de zoom / lecture ne sont pas encore câblés (title "bientôt"). La
-// silhouette (fit → niveaux 2/1/0 → dispersion → pause) reprend la maquette.
-function FitIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="6" cy="7" r="2" />
-      <circle cx="17" cy="6" r="2" />
-      <circle cx="13" cy="17" r="2" />
-      <path d="M8 8l7 7M8 7.5l8-1" />
-    </svg>
-  );
-}
+// Dock vertical droit — sélecteur de lentille de la galaxie. Trois vues de la
+// MÊME donnée : RAG = nuage de points (positions par embedding, sans liens),
+// RAG + KG = points ET traits (sémantique + arêtes du knowledge graph), KG =
+// traits (structure du graphe, positions par la topologie). Pilote la prop
+// `mode` de <Galaxy>, qui anime un morph des positions au changement.
+import type { ReactNode } from "react";
+import type { GalaxyMode } from "./Galaxy";
 
-function ScatterIcon() {
+// Nuage de points seuls (RAG).
+function PointsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-      <circle cx="6" cy="7" r="1.6" />
-      <circle cx="13" cy="5" r="1.6" />
-      <circle cx="18" cy="10" r="1.6" />
-      <circle cx="8" cy="14" r="1.6" />
-      <circle cx="15" cy="17" r="1.6" />
+      <circle cx="6" cy="7" r="1.7" />
+      <circle cx="13" cy="5" r="1.7" />
+      <circle cx="18" cy="10" r="1.7" />
+      <circle cx="8" cy="15" r="1.7" />
+      <circle cx="16" cy="17" r="1.7" />
     </svg>
   );
 }
 
-function PauseIcon() {
+// Points ET traits (RAG + KG) : nœuds pleins reliés par des arêtes fines.
+function BothIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 5v14M15 5v14" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 7L17 6M7 7L13 17M17 6L13 17" />
+      <circle cx="7" cy="7" r="2.1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="6" r="2.1" fill="currentColor" stroke="none" />
+      <circle cx="13" cy="17" r="2.1" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
-export function ZoomDock() {
+// Traits (KG) : structure du graphe, arêtes accentuées, nœuds creux.
+function LinesIcon() {
   return (
-    <nav className="zoomdock" aria-label="Graph view" title="Graph view (bientôt)">
-      <span className="zbtn" aria-hidden>
-        <FitIcon />
-      </span>
-      <div className="dock-sep" aria-hidden />
-      <span className="zbtn zlevel" aria-hidden>2</span>
-      <span className="zbtn zlevel" aria-hidden>1</span>
-      <span className="zbtn zlevel active" aria-hidden>0</span>
-      <div className="dock-sep" aria-hidden />
-      <span className="zbtn" aria-hidden>
-        <ScatterIcon />
-      </span>
-      <span className="zbtn" aria-hidden>
-        <PauseIcon />
-      </span>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 7L17 6M7 7L13 17M17 6L13 17" />
+      <circle cx="7" cy="7" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
+      <circle cx="17" cy="6" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
+      <circle cx="13" cy="17" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+const OPTIONS: { mode: GalaxyMode; label: string; title: string; icon: ReactNode }[] = [
+  { mode: "rag", label: "RAG", title: "Nuage de points — positions par embedding, sans les liens", icon: <PointsIcon /> },
+  { mode: "ragkg", label: "R+K", title: "Points et traits — sémantique + arêtes du knowledge graph", icon: <BothIcon /> },
+  { mode: "kg", label: "KG", title: "Traits — structure du graphe (topologie des liens)", icon: <LinesIcon /> },
+];
+
+export function ZoomDock({ mode, onChange }: { mode: GalaxyMode; onChange: (m: GalaxyMode) => void }) {
+  return (
+    <nav className="zoomdock" role="radiogroup" aria-label="Vue de la galaxie">
+      {OPTIONS.map((o) => (
+        <button
+          key={o.mode}
+          type="button"
+          role="radio"
+          aria-checked={mode === o.mode}
+          title={o.title}
+          className={`zmode${mode === o.mode ? " active" : ""}`}
+          onClick={() => onChange(o.mode)}
+        >
+          {o.icon}
+          <span className="zmode-label">{o.label}</span>
+        </button>
+      ))}
     </nav>
   );
 }

@@ -1,9 +1,8 @@
-// app/shell/galaxy-layout.ts — disposition radiale déterministe de la galaxie.
-// Aucune simulation, aucun hasard : chaque type de nœud occupe un anneau fixe
-// (protocoles au centre, runs au milieu, rapports en périphérie), les nœuds
-// d'un même anneau sont répartis à angles réguliers, triés par id pour que
-// l'ordre d'entrée n'influence jamais la sortie. Module pur — pas de DOM,
-// testable en isolation (cf. galaxy-layout.test.ts).
+// app/shell/galaxy-layout.ts — types partagés de la galaxie (nœuds + arêtes).
+// La position des nœuds n'est plus radiale : elle vient de deux layouts calculés
+// côté serveur (cf. app/api/galaxy/route.ts) — `pos` par embedding sémantique
+// (lib/retrieval/project3d) et `posKg` par la topologie du graphe
+// (app/shell/graph-layout3d). Ce module ne porte plus que des types.
 
 export type GNode = {
   id: string;
@@ -14,31 +13,8 @@ export type GNode = {
 
 export type GEdge = { from: string; to: string };
 
-export type PositionedNode = GNode & { x: number; y: number };
+export type Vec3 = [number, number, number];
 
-// Anneaux du plus central au plus périphérique.
-const KIND_ORDER: GNode["kind"][] = ["protocol", "run", "report"];
-const RING_RADIUS: Record<GNode["kind"], number> = {
-  protocol: 90,
-  run: 220,
-  report: 360,
-};
-
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
-
-/** Place chaque nœud sur l'anneau de son type, à angle régulier. Déterministe :
- *  mêmes nœuds en entrée (quel que soit leur ordre) → mêmes coordonnées en sortie. */
-export function layoutNodes(nodes: GNode[]): PositionedNode[] {
-  const out: PositionedNode[] = [];
-  for (const kind of KIND_ORDER) {
-    const ring = nodes.filter((n) => n.kind === kind).sort((a, b) => a.id.localeCompare(b.id));
-    const radius = RING_RADIUS[kind];
-    ring.forEach((node, i) => {
-      const angle = (2 * Math.PI * i) / ring.length;
-      out.push({ ...node, x: round3(radius * Math.cos(angle)), y: round3(radius * Math.sin(angle)) });
-    });
-  }
-  return out;
-}
+/** Nœud enrichi de ses deux positions 3D (cube [-1,1]) :
+ *  `pos` = layout sémantique (RAG), `posKg` = layout du graphe (topologie). */
+export type GNode3D = GNode & { pos: Vec3; posKg: Vec3 };

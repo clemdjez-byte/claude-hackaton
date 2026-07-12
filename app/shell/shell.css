@@ -298,6 +298,36 @@
   background: var(--oct-paper-2, #f0ede3);
 }
 
+/* boutons de sélection de lentille dans le zoom dock (RAG / R+K / KG) */
+.zmode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.zmode:hover {
+  color: var(--foreground);
+}
+.zmode.active {
+  color: var(--foreground);
+  background: var(--oct-paper-2, #f0ede3);
+}
+.zmode-label {
+  font-family: var(--font-mono-display), var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
 /* command entry bar, bottom center */
 .entry {
   position: absolute;

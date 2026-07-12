@@ -5,6 +5,9 @@
 export { embed, embedBatch, cosine, activeEmbedding } from "./embed";
 export type { EmbedKind } from "./embed";
 
+// Projection déterministe d'embeddings vers 3D (galaxie sémantique).
+export { projectTo3D } from "./project3d";
+
 // Mémoire sémantique (lab-memory).
 export { indexEntry, search, recall } from "./lab-memory";
 

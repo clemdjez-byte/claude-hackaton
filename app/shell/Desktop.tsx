@@ -11,7 +11,7 @@ import { WindowContent } from "./WindowContent";
 import { Toolbar } from "./Toolbar";
 import { ChatDock } from "./ChatDock";
 import { Clock } from "./Clock";
-import { Galaxy } from "./Galaxy";
+import { Galaxy, type GalaxyMode } from "./Galaxy";
 import { ZoomDock } from "./ZoomDock";
 
 // Prénom affiché dans le greeting. En dur pour l'instant (mono-utilisateur) —
@@ -23,6 +23,7 @@ export function Desktop() {
   const { windows, activeId, focus } = api;
   const [docCount, setDocCount] = useState<number | null>(null);
   const onGraphLoad = useCallback((n: number) => setDocCount(n), []);
+  const [galaxyMode, setGalaxyMode] = useState<GalaxyMode>("ragkg");
 
   // Pile des fenêtres réduites (bas droite), déployée en éventail au survol.
   // Ordre stable = ordre du tableau windows (pas le z), pour que la pile ne se
@@ -62,7 +63,7 @@ export function Desktop() {
   return (
     <WindowsContext.Provider value={api}>
       <div className="desktop">
-        <Galaxy onLoad={onGraphLoad} />
+        <Galaxy onLoad={onGraphLoad} mode={galaxyMode} />
 
         <header className="hero">
           <h1 className="greeting">
@@ -73,7 +74,7 @@ export function Desktop() {
 
         <Clock />
         <Toolbar />
-        <ZoomDock />
+        <ZoomDock mode={galaxyMode} onChange={setGalaxyMode} />
 
         <div className="graph-stats" aria-hidden>
           <span className="graph-stats-label">Knowledge graph</span>
