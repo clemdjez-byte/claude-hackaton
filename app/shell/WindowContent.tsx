@@ -9,7 +9,7 @@ import BenchHubPanel from "@/app/bench/BenchHubPanel";
 import ProtocolsPanel from "@/app/bench/ProtocolsPanel";
 import ProtocolPanel from "@/app/bench/ProtocolPanel";
 import RunPanel from "@/app/bench/RunPanel";
-import ReportPanel from "@/app/bench/ReportPanel";
+import ReportEditor from "@/app/bench/ReportEditor";
 import FilesPanel from "@/app/files/FilesPanel";
 
 export function WindowContent({ win }: { win: Win }) {
@@ -28,7 +28,7 @@ export function WindowContent({ win }: { win: Win }) {
     case "run":
       return <RunPanel runId={win.params!.runId} />;
     case "report":
-      return <ReportPanel runId={win.params!.runId} />;
+      return <ReportEditor runId={win.params!.runId} />;
     case "files":
       return <FilesPanel />;
     default:

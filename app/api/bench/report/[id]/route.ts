@@ -1,4 +1,4 @@
-// Lecture thin pour ReportPanel — même logique que l'ancien
+// Lecture thin pour ReportEditor — même logique que l'ancien
 // app/bench/report/[runId]/page.tsx : le rapport est normalement déjà généré
 // à la complétion du run (best-effort) ; s'il manque, on le régénère ici
 // avant d'abandonner en 404.

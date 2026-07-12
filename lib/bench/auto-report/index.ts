@@ -18,6 +18,7 @@ import { listEvidence } from "../evidence-capture";
 
 export interface StoredReport {
   id: Id; // id de la page report
+  version: number; // version de page : draft = updateDraft en place, signature = newPageVersion figée
   runId: Id;
   protocolTitle: string;
   generatedAt: string;
@@ -26,8 +27,9 @@ export interface StoredReport {
   signedBy?: string;
 }
 
-// Contenu stocké dans `Page.content` pour une page de type 'report'.
-type ReportPageMeta = Omit<StoredReport, "id">;
+// Contenu stocké dans `Page.content` pour une page de type 'report' (id et
+// version sont portés par la page elle-même, pas dupliqués dans le content).
+type ReportPageMeta = Omit<StoredReport, "id" | "version">;
 
 // Citation locale à la brique (pas de type stocké : les faits ne sont plus
 // persistés qu'une fois rendus en HTML, cf. renderHtml).
@@ -286,7 +288,11 @@ export function htmlToText(html: string): string {
     .replace(/<h3[^>]*>/gi, "\n### ")
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(h1|h2|h3|p|li|blockquote|div)>/gi, "\n")
+    // Fermetures de blocs "reconnus" + repli générique pour les blocs non
+    // listés explicitement (cellules/lignes de table notamment : l'éditeur
+    // permet maintenant d'en insérer) — sans ce filet, "<td>A</td><td>B</td>"
+    // devient "AB" au lieu de deux mots séparés.
+    .replace(/<\/(h1|h2|h3|p|li|blockquote|div|table|thead|tbody|tfoot|tr|td|th)>/gi, "\n")
     .replace(/<[^>]+>/g, "");
   const decoded = withBreaks
     .replace(/&lt;/g, "<")
@@ -306,7 +312,7 @@ export function htmlToText(html: string): string {
 // ── helpers ──────────────────────────────────────────────────────────────
 function toStored(page: Page): StoredReport {
   const c = page.content as ReportPageMeta;
-  return { id: page.id, ...c };
+  return { id: page.id, version: page.version, ...c };
 }
 
 function stepDurationMin(start?: string, end?: string): number | null {
