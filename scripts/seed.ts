@@ -223,6 +223,13 @@ async function main(): Promise<void> {
   const { store } = getBenchSession();
   console.log("Octopus — seed de démo (knowledge graph)\n");
 
+  if (!process.env.VOYAGE_API_KEY) {
+    console.warn(
+      "⚠️  VOYAGE_API_KEY absente : la mémoire sémantique (RAG) ne sera PAS indexée " +
+        "(le chat « Ask your lab » ne trouvera rien). Ajoute la clé à .env.local puis relance.\n"
+    );
+  }
+
   await seedKnowledgeGraph(store);
 
   console.log("\n— Résumé —");

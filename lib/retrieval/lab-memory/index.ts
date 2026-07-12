@@ -3,10 +3,11 @@
 // (runs, protocoles, evidence, reports) sous forme de vecteurs, et on retrouve
 // les plus proches d'un contexte textuel. Aucune autre brique n'y touche.
 //
-// Les vecteurs sont produits par embed() (bag-of-words local déterministe) et
-// comparés par cosine() — tous deux fournis par ce domaine (embed.ts). Stockage
-// via la primitive `embedding` (db.insertEmbedding / db.listEmbeddings) : aucune
-// table nouvelle. Swappable vers une extension vectorielle Postgres sans toucher à ce fichier.
+// Les vecteurs sont produits par Voyage (embed/embedBatch, embed.ts) et comparés
+// par cosine(). Les longs textes sont découpés en chunks (chunk.ts) — une ligne
+// `embedding` par chunk. La recherche sur-récupère un pool, le re-classe avec le
+// reranker Voyage (optionnel), puis déduplique par source. Stockage via la
+// primitive `embedding` (db.insertEmbedding / db.listEmbeddings).
 import {
   assertEnabled,
   type Db,
@@ -15,11 +16,18 @@ import {
   type MemorySourceType,
   type Ws,
 } from "@/lib/core";
-import { embed, cosine } from "@/lib/retrieval/embed";
+import { embed, embedBatch, cosine, activeEmbedding } from "@/lib/retrieval/embed";
+import { chunkText } from "@/lib/retrieval/chunk";
+import { rerank, rerankEnabled } from "@/lib/retrieval/rerank";
 
-// Seuil sous lequel un score est considéré nul : le bag-of-words normalisé
-// donne un produit scalaire exactement 0 quand aucun mot n'est partagé.
+// Seuil sous lequel un score est considéré nul. Utile surtout pour écarter les
+// entrées sans aucun recouvrement (produit scalaire exactement 0). Sur des
+// vecteurs Voyage denses il ne filtre quasi rien — c'est le pool + le rerank +
+// le top-k qui font la pertinence.
 const SEUIL_PERTINENCE = 1e-9;
+
+// Taille du pool sur-récupéré avant regroupement / rerank.
+const POOL_MIN = 30;
 
 /** Entrée à mémoriser. `meta` transporte le contexte utile (titre, run, etc.). */
 export interface IndexInput {
@@ -30,34 +38,84 @@ export interface IndexInput {
   meta?: Record<string, unknown>;
 }
 
-/** Vectorise le texte et l'archive dans la mémoire sémantique du lab. */
-export async function indexEntry(db: Db, input: IndexInput): Promise<MemoryEntry> {
+/**
+ * Vectorise le texte (découpé en chunks) et l'archive dans la mémoire du lab.
+ * Un seul appel réseau Voyage pour tous les chunks. Renvoie une entrée par chunk.
+ */
+export async function indexEntry(db: Db, input: IndexInput): Promise<MemoryEntry[]> {
   assertEnabled("labMemory");
-  const vector = embed(input.text);
-  return db.insertEmbedding({
-    ws: input.ws,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    text: input.text,
-    vector,
-    meta: input.meta,
-  });
+  const { model, dim } = activeEmbedding();
+  const chunks = chunkText(input.text);
+  const vectors = await embedBatch(
+    chunks.map((c) => c.text),
+    "document"
+  );
+  const entries: MemoryEntry[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const meta =
+      chunks.length > 1
+        ? { ...(input.meta ?? {}), chunkIndex: chunks[i].index, chunkCount: chunks[i].count }
+        : input.meta ?? {};
+    entries.push(
+      await db.insertEmbedding({
+        ws: input.ws,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        text: chunks[i].text,
+        vector: vectors[i],
+        meta,
+        model,
+        dim,
+      })
+    );
+  }
+  return entries;
+}
+
+/** Re-classe le pool via le reranker Voyage. Repli sûr : renvoie tel quel si
+ *  désactivé, si trop peu d'éléments, ou en cas d'erreur/timeout. */
+async function maybeRerank(query: string, hits: MemoryHit[]): Promise<MemoryHit[]> {
+  if (!rerankEnabled() || hits.length <= 1) return hits;
+  try {
+    const ranked = await rerank(query, hits.map((h) => h.text), hits.length);
+    return ranked.map(({ index, score }) => ({ ...hits[index], score }));
+  } catch (e) {
+    console.warn("[lab-memory] rerank échoué (best-effort, on garde l'ordre cosine) :", e);
+    return hits;
+  }
 }
 
 /**
- * Retrouve les k entrées les plus proches de `query` dans le lab `ws`.
- * Score = cosine(vecteur de la requête, vecteur de l'entrée), tri décroissant.
- * Les entrées sans aucun mot en commun (score ~0) sont écartées.
+ * Retrouve les k sources les plus pertinentes pour `query` dans le lab `ws`.
+ * Pipeline : embedding de la requête (input_type=query) → cosine sur les vecteurs
+ * du provider actif → pool → rerank (optionnel) → dedup par source → top-k.
  */
 export async function search(db: Db, ws: Ws, query: string, k = 5): Promise<MemoryHit[]> {
   assertEnabled("labMemory");
-  const qv = embed(query);
-  const rows = await db.listEmbeddings(ws);
-  return rows
-    .map(({ entry, vector }): MemoryHit => ({ ...entry, score: cosine(qv, vector) }))
-    .filter((hit) => hit.score > SEUIL_PERTINENCE)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, k);
+  const { model } = activeEmbedding();
+  const qv = await embed(query, "query");
+  const rows = await db.listEmbeddings(ws, { model });
+
+  // 1) score cosine, garde-fou de dimension (modèle/dim changé sans reseed).
+  const scored: MemoryHit[] = [];
+  for (const { entry, vector } of rows) {
+    if (vector.length !== qv.length) continue;
+    const score = cosine(qv, vector);
+    if (score > SEUIL_PERTINENCE) scored.push({ ...entry, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const pool = scored.slice(0, Math.max(k * 4, POOL_MIN));
+
+  // 2) rerank optionnel du pool.
+  const ranked = await maybeRerank(query, pool);
+
+  // 3) dédup : meilleur chunk par source (liste déjà triée best-first).
+  const best = new Map<string, MemoryHit>();
+  for (const h of ranked) {
+    const key = `${h.sourceType}:${h.sourceId}`;
+    if (!best.has(key)) best.set(key, h);
+  }
+  return [...best.values()].slice(0, k);
 }
 
 /**

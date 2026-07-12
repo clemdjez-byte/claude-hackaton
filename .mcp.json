@@ -3,7 +3,7 @@
     "octopus": {
       "command": "node",
       "args": ["octopus-mcp/build/index.js"],
-      "env": { "OCTOPUS_DB_PATH": "octopus.db", "OCTOPUS_WS": "demo-lab" }
+      "env": { "OCTOPUS_DB_PATH": "octopus.db", "OCTOPUS_WS": "demo", "VOYAGE_API_KEY": "" }
     }
   }
 }

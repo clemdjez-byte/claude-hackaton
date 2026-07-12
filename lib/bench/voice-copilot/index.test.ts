@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { type Db } from "@/lib/core";
 import { createDb } from "@/lib/core/sqlite";
 import { seedReferenceProtocol } from "../protocol-studio";
@@ -7,11 +7,46 @@ import { listEvidence } from "../evidence-capture";
 import { indexEntry } from "@/lib/retrieval";
 import { buildSystemPrompt, buildVoiceTools } from "./index";
 
+// Mock déterministe de l'API Voyage (sac-de-mots dim 256), pour exercer le RAG
+// sans réseau — cf. lib/retrieval/lab-memory/index.test.ts.
+const DIM = 256;
+function bow(text: string): number[] {
+  const vec = new Array<number>(DIM).fill(0);
+  const tokens = text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/[^a-z0-9]+/).filter((t) => t.length > 1);
+  for (const tok of tokens) {
+    let h = 2166136261;
+    for (let i = 0; i < tok.length; i++) {
+      h ^= tok.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    vec[Math.abs(h) % DIM] += 1;
+  }
+  const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
+  return vec.map((v) => v / norm);
+}
+
 beforeAll(() => {
   process.env.FEATURE_PROTOCOL_STUDIO = "true";
   process.env.FEATURE_LIVE_BENCH = "true";
   process.env.FEATURE_EVIDENCE_CAPTURE = "true";
   process.env.FEATURE_LAB_MEMORY = "true";
+  process.env.VOYAGE_API_KEY = "test-key";
+  process.env.VOYAGE_EMBED_DIM = String(DIM);
+  process.env.VOYAGE_RERANK = "false";
+});
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init: { body: string }) => {
+      const { input } = JSON.parse(init.body) as { input: string[] };
+      return { ok: true, json: async () => ({ data: input.map((t, index) => ({ embedding: bow(t), index })) }) };
+    })
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 const opts = { toolCallId: "t1", messages: [] } as never;

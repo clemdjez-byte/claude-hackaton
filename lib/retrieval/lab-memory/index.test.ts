@@ -1,10 +1,56 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { type Db } from "@/lib/core";
 import { createDb } from "@/lib/core/sqlite";
 import { indexEntry, search, recall } from "./index";
 
+// Mock déterministe de l'API Voyage : reproduit un embedding « sac-de-mots »
+// (dim 256) — même sémantique de recouvrement lexical que l'ancien embedder
+// local, pour que les assertions d'ordre/pertinence tiennent SANS réseau.
+const DIM = 256;
+function bow(text: string): number[] {
+  const vec = new Array<number>(DIM).fill(0);
+  const tokens = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 1);
+  for (const tok of tokens) {
+    let h = 2166136261;
+    for (let i = 0; i < tok.length; i++) {
+      h ^= tok.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    vec[Math.abs(h) % DIM] += 1;
+  }
+  const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
+  return vec.map((v) => v / norm);
+}
+
 beforeAll(() => {
   process.env.FEATURE_LAB_MEMORY = "true";
+  process.env.VOYAGE_API_KEY = "test-key";
+  process.env.VOYAGE_EMBED_DIM = String(DIM);
+  process.env.VOYAGE_RERANK = "false"; // pas de 2e étage dans les tests
+});
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init: { body: string }) => {
+      const { input } = JSON.parse(init.body) as { input: string[] };
+      return {
+        ok: true,
+        json: async () => ({
+          data: input.map((t, index) => ({ embedding: bow(t), index })),
+        }),
+      };
+    })
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 function db(): Db {
@@ -41,9 +87,9 @@ async function semer(d: Db): Promise<void> {
 }
 
 describe("Lab Memory", () => {
-  it("indexEntry crée une entrée mémoire vectorisée", async () => {
+  it("indexEntry crée une (ou des) entrée(s) mémoire vectorisée(s)", async () => {
     const d = db();
-    const entry = await indexEntry(d, {
+    const [entry] = await indexEntry(d, {
       ws: "lab1",
       sourceType: "report",
       sourceId: "rp_1",
@@ -53,7 +99,7 @@ describe("Lab Memory", () => {
     expect(entry.id).toMatch(/^mem_/);
     expect(entry.sourceType).toBe("report");
     expect(entry.sourceId).toBe("rp_1");
-    expect(entry.meta).toEqual({ author: "operator" });
+    expect(entry.meta).toEqual({ author: "operator" }); // texte court → 1 chunk, meta inchangée
     d.close();
   });
 

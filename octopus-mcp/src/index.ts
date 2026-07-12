@@ -8,29 +8,25 @@ import Database from "better-sqlite3";
 import { z } from "zod";
 
 const DB_PATH = process.env.OCTOPUS_DB_PATH || "data/octopus.db";
-const DEFAULT_WS = process.env.OCTOPUS_WS || "demo-lab";
+const DEFAULT_WS = process.env.OCTOPUS_WS || "demo"; // doit matcher WS de lib/session.ts
 
-// ── Embedder — DOIT rester en phase avec lib/retrieval/embed.ts (même dim,
-// même hash) pour que les vecteurs stockés par l'app soient comparables ici.
-const EMBED_DIM = 256;
-function embed(text: string): number[] {
-  const vec = new Array<number>(EMBED_DIM).fill(0);
-  const tokens = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1);
-  for (const tok of tokens) {
-    let h = 2166136261;
-    for (let i = 0; i < tok.length; i++) {
-      h ^= tok.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    vec[Math.abs(h) % EMBED_DIM] += 1;
-  }
-  const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
-  return vec.map((v) => v / norm);
+// ── Embedder — via Voyage AI, comme l'app (lib/retrieval/embed.ts). La requête
+// DOIT être vectorisée avec le MÊME modèle que les vecteurs stockés, sinon les
+// espaces sont incomparables. On filtre donc les lignes par `model` (voir plus
+// bas) et on embarque la requête avec ce modèle. Sans VOYAGE_API_KEY → erreur.
+const VOYAGE_MODEL = process.env.VOYAGE_MODEL || "voyage-3.5";
+async function embedQuery(text: string, dimension: number): Promise<number[]> {
+  const key = process.env.VOYAGE_API_KEY;
+  if (!key) throw new Error("VOYAGE_API_KEY manquante : query_lab_memory ne peut pas vectoriser la requête.");
+  const res = await fetch("https://api.voyageai.com/v1/embeddings", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: VOYAGE_MODEL, input: [text], input_type: "query", output_dimension: dimension }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Voyage embeddings a échoué (${res.status}).`);
+  const json = (await res.json()) as { data: Array<{ embedding: number[]; index: number }> };
+  return json.data[0].embedding;
 }
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
@@ -60,13 +56,17 @@ server.registerTool(
   async ({ query, k, ws }) => {
     const db = openDb();
     try {
+      // Ne comparer que les vecteurs du modèle actif (espaces incomparables sinon).
       const rows = db
-        .prepare(`SELECT source_type, source_id, text, vector FROM embedding WHERE ws = ?`)
-        .all(ws ?? DEFAULT_WS) as Array<{ source_type: string; source_id: string; text: string; vector: string }>;
-      const q = embed(query);
+        .prepare(`SELECT source_type, source_id, text, vector, dim FROM embedding WHERE ws = ? AND model = ?`)
+        .all(ws ?? DEFAULT_WS, VOYAGE_MODEL) as Array<{ source_type: string; source_id: string; text: string; vector: string; dim: number }>;
+      if (rows.length === 0) {
+        return { content: [{ type: "text", text: "Aucun résultat en mémoire (base non indexée avec ce modèle ?)." }] };
+      }
+      const q = await embedQuery(query, rows[0].dim);
       const hits = rows
         .map((r) => ({ ...r, score: cosine(q, JSON.parse(r.vector) as number[]) }))
-        .filter((r) => r.score > 0.001)
+        .filter((r) => r.score > 1e-9)
         .sort((a, b) => b.score - a.score)
         .slice(0, k ?? 5);
       const text = hits.length

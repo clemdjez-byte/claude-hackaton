@@ -71,9 +71,12 @@ CREATE INDEX IF NOT EXISTS evidence_run_idx ON evidence(run_id, step_id);
 CREATE TABLE IF NOT EXISTS embedding (
   id TEXT PRIMARY KEY, ws TEXT NOT NULL, source_type TEXT NOT NULL,
   source_id TEXT NOT NULL, text TEXT NOT NULL, vector TEXT NOT NULL,
-  meta TEXT NOT NULL, created_at TEXT NOT NULL
+  meta TEXT NOT NULL, created_at TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '', dim INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS embedding_ws_idx ON embedding(ws);
+-- Note : l'index (ws, model) est créé dans la migration (après l'ALTER), pour
+-- ne pas référencer la colonne model sur une base existante avant qu'elle existe.
 
 CREATE TABLE IF NOT EXISTS kg_edge (
   id TEXT PRIMARY KEY, ws TEXT NOT NULL, relation TEXT NOT NULL,
@@ -260,6 +263,18 @@ export function createDb(path = ":memory:"): Db {
   if (!edgeCols.some((c) => c.name === "attrs")) {
     sql.exec(`ALTER TABLE kg_edge ADD COLUMN attrs TEXT`);
   }
+
+  // Migration idempotente : bases existantes créées avant le passage aux vrais
+  // embeddings (tag model/dim sur embedding). Les anciennes lignes prennent
+  // model='' → elles ne matchent aucun provider et sont ignorées jusqu'au reseed.
+  const embCols = sql.prepare(`PRAGMA table_info(embedding)`).all() as { name: string }[];
+  if (!embCols.some((c) => c.name === "model")) {
+    sql.exec(`ALTER TABLE embedding ADD COLUMN model TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!embCols.some((c) => c.name === "dim")) {
+    sql.exec(`ALTER TABLE embedding ADD COLUMN dim INTEGER NOT NULL DEFAULT 0`);
+  }
+  sql.exec(`CREATE INDEX IF NOT EXISTS embedding_ws_model_idx ON embedding(ws, model)`);
 
   return {
     async insertPage(np) {
@@ -584,14 +599,21 @@ export function createDb(path = ":memory:"): Db {
       };
       sql
         .prepare(
-          `INSERT INTO embedding (id, ws, source_type, source_id, text, vector, meta, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO embedding (id, ws, source_type, source_id, text, vector, meta, created_at, model, dim)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(id, ne.ws, ne.sourceType, ne.sourceId, ne.text, j(ne.vector), j(entry.meta), createdAt);
+        .run(
+          id, ne.ws, ne.sourceType, ne.sourceId, ne.text, j(ne.vector), j(entry.meta), createdAt,
+          ne.model, ne.dim
+        );
       return entry;
     },
-    async listEmbeddings(ws) {
-      const rows = sql.prepare(`SELECT * FROM embedding WHERE ws = ?`).all(ws) as Row[];
+    async listEmbeddings(ws, opts) {
+      const rows = (
+        opts?.model
+          ? sql.prepare(`SELECT * FROM embedding WHERE ws = ? AND model = ?`).all(ws, opts.model)
+          : sql.prepare(`SELECT * FROM embedding WHERE ws = ?`).all(ws)
+      ) as Row[];
       return rows.map((r) => ({
         entry: {
           id: r.id as string,

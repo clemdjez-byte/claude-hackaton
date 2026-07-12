@@ -52,6 +52,8 @@ export type NewEmbedding = {
   text: string;
   vector: number[];
   meta?: Record<string, unknown>;
+  model: string; // provider+modèle ayant produit le vecteur (ex. "voyage-3.5")
+  dim: number; // dimension du vecteur (ex. 1024)
 };
 export type NewEdge = Omit<KgEdge, "id" | "createdAt">;
 export type NewFolder = { ws: Ws; name: string; parentId?: Id | null };
@@ -98,7 +100,10 @@ export interface Db {
 
   // embeddings (mémoire sémantique) — seule brique lab-memory à s'en servir
   insertEmbedding(e: NewEmbedding): Promise<MemoryEntry>;
-  listEmbeddings(ws: Ws): Promise<Array<{ entry: MemoryEntry; vector: number[] }>>;
+  listEmbeddings(
+    ws: Ws,
+    opts?: { model?: string }
+  ): Promise<Array<{ entry: MemoryEntry; vector: number[] }>>;
 
   // knowledge graph
   insertEdge(e: NewEdge): Promise<KgEdge>;

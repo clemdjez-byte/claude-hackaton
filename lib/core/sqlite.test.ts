@@ -60,10 +60,21 @@ describe("Db seam (SQLite :memory:)", () => {
 
   it("indexe des embeddings et les relit avec leur vecteur", async () => {
     const db = createDb(":memory:");
-    await db.insertEmbedding({ ws: "lab1", sourceType: "run", sourceId: "run_1", text: "incubation 12 min", vector: [0.1, 0.2] });
+    await db.insertEmbedding({ ws: "lab1", sourceType: "run", sourceId: "run_1", text: "incubation 12 min", vector: [0.1, 0.2], model: "voyage-3.5", dim: 2 });
     const all = await db.listEmbeddings("lab1");
     expect(all).toHaveLength(1);
     expect(all[0].vector).toEqual([0.1, 0.2]);
+    db.close();
+  });
+
+  it("listEmbeddings filtre par modèle (isole les espaces vectoriels)", async () => {
+    const db = createDb(":memory:");
+    await db.insertEmbedding({ ws: "lab1", sourceType: "run", sourceId: "r_a", text: "a", vector: [1], model: "voyage-3.5", dim: 1 });
+    await db.insertEmbedding({ ws: "lab1", sourceType: "run", sourceId: "r_b", text: "b", vector: [2], model: "autre", dim: 1 });
+    expect(await db.listEmbeddings("lab1")).toHaveLength(2); // sans filtre : tout
+    const voyage = await db.listEmbeddings("lab1", { model: "voyage-3.5" });
+    expect(voyage.map((e) => e.entry.sourceId)).toEqual(["r_a"]);
+    expect(await db.listEmbeddings("lab1", { model: "inconnu" })).toEqual([]);
     db.close();
   });
 });

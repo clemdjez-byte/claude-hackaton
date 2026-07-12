@@ -14,7 +14,7 @@ import { NODE, type KgNode } from "@/lib/retrieval/knowledge-graph/ontology";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const MAX_HIT_CHARS = 800;
+const MAX_HIT_CHARS = 1200; // chaque hit est désormais un chunk déjà borné
 const HIT_COUNT = 8;
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
