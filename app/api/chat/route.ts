@@ -8,6 +8,8 @@ import { streamText, type ModelMessage } from "ai";
 import { search } from "@/lib/retrieval";
 import type { MemoryHit } from "@/lib/core";
 import { getBenchSession, WS } from "@/lib/session";
+import { collectGraphFacts, renderGraphFacts } from "@/lib/retrieval/knowledge-graph/query";
+import { NODE, type KgNode } from "@/lib/retrieval/knowledge-graph/ontology";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -26,23 +28,41 @@ function isChatMessage(m: unknown): m is ChatMessage {
   );
 }
 
+/** Mappe les hits du RAG (mémoire) en nœuds d'ancrage du graphe. Seuls les runs
+ *  et protocoles sont des points d'entrée de traversée (evidence/report non). */
+export function hitsToAnchors(hits: Array<{ sourceType: string; sourceId: string }>): KgNode[] {
+  const anchors: KgNode[] = [];
+  for (const h of hits) {
+    if (h.sourceType === "run") anchors.push(NODE.run(h.sourceId));
+    else if (h.sourceType === "protocol") anchors.push(NODE.protocol(h.sourceId));
+  }
+  return anchors;
+}
+
 /** Bloc contexte : une ligne « [type:id] texte » par hit, tronquée. */
-function buildSystemPrompt(hits: MemoryHit[]): string {
+function buildSystemPrompt(hits: MemoryHit[], graphBlock: string): string {
   const context = hits.length
-    ? hits
-        .map((h) => `[${h.sourceType}:${h.sourceId}] ${h.text.slice(0, MAX_HIT_CHARS)}`)
-        .join("\n\n")
+    ? hits.map((h) => `[${h.sourceType}:${h.sourceId}] ${h.text.slice(0, MAX_HIT_CHARS)}`).join("\n\n")
     : "(No relevant lab memory found for this question.)";
 
-  return `You are the Octopus lab copilot for Bench, the wet-lab notebook. You answer questions about THIS lab's work using ONLY the context below (protocols, runs, evidence, and reports retrieved from its memory).
+  return `You are the Octopus lab copilot for Bench, the wet-lab notebook. You answer questions about THIS lab's work using ONLY the context below.
+
+You are given TWO context blocks:
+- GRAPH FACTS: structured, quantitative facts derived from this lab's runs (parameters, verdicts, and documented failure modes with thresholds). Prefer these for any quantitative or aggregate claim (e.g. "the successes cluster at 60–62 °C", "3 of 4 failures violated a documented threshold").
+- TEXT EXCERPTS: free-text chunks retrieved from lab memory (protocols, runs, evidence, reports).
 
 Rules:
-- Answer strictly from the context. Never invent facts, results, or numbers that are not in it.
-- Cite every claim you make with the exact source tag from the context, in the form [type:id] (e.g. [run:abc123]).
-- Distinguish clearly between a raw observation, a protocol instruction, a measurement, and your own inference — say which is which.
-- If the context does not contain the answer, say so plainly instead of guessing.
+- Answer strictly from the two blocks. Never invent facts, results, or numbers not present in them.
+- For every claim, cite the exact source tag in the form [type:id] (e.g. [run:abc123], [protocol:p1]).
+- For quantitative or aggregate statements, rely on GRAPH FACTS and cite the runs involved.
+- Distinguish a raw observation, a protocol instruction, a measurement, and your own inference — say which is which.
+- If neither block answers the question, say so plainly instead of guessing.
+- Never perform an autonomous literature search; only use citations already present in the context.
 
-CONTEXT:
+GRAPH FACTS:
+${graphBlock}
+
+TEXT EXCERPTS:
 ${context}`;
 }
 
@@ -76,6 +96,17 @@ export async function POST(req: Request) {
 
         const { store } = getBenchSession();
         const hits = await search(store, WS, lastUser.content.trim(), HIT_COUNT);
+
+        // Voie graphe : les hits servent d'ancres. Best-effort (ne bloque pas le chat).
+        let graphBlock = "(Aucun fait de graphe pour ces entités.)";
+        try {
+          const facts = await collectGraphFacts(store, WS, hitsToAnchors(hits));
+          graphBlock = renderGraphFacts(facts);
+          send({ type: "graph", facts });
+        } catch (e) {
+          console.warn("[chat] collecte graphe échouée (best-effort) :", e);
+        }
+
         send({
           type: "sources",
           hits: hits.map((h) => ({
@@ -88,7 +119,7 @@ export async function POST(req: Request) {
 
         const result = streamText({
           model: anthropic("claude-sonnet-5"),
-          system: buildSystemPrompt(hits),
+          system: buildSystemPrompt(hits, graphBlock),
           messages: messages.map((m): ModelMessage => ({ role: m.role, content: m.content })),
         });
         for await (const part of result.fullStream) {

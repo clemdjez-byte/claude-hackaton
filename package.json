@@ -10,8 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "reset": "tsx scripts/reset.ts",
-    "seed": "tsx scripts/seed.ts",
+    "reset": "tsx --env-file-if-exists=.env.local scripts/reset.ts",
+    "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "voice": "concurrently -k -n livekit,agent -c blue,magenta \"livekit-server --dev\" \"tsx --env-file-if-exists=.env.local voice-agent/agent.ts dev\""
   },
   "dependencies": {

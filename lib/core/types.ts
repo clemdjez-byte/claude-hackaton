@@ -205,14 +205,61 @@ export interface MemoryHit extends MemoryEntry {
   score: number;
 }
 
+export type EdgeProvenance = "derived" | "extracted" | "entered";
+
 export interface KgEdge {
   id: Id;
   ws: Ws;
-  relation: string; // uses_reagent | ran_protocol | derived_from | measured_with | produced_report
+  relation: string; // uses_reagent | ran_protocol | derived_from | measured_with | produced_report | instance_of | has_value | resulted_in | attributed_to | declares | uses_param
   fromType: string;
   fromId: Id;
   toType: string;
   toId: Id;
+  provenance?: EdgeProvenance; // défaut 'derived' (rempli par l'adaptateur)
+  confidence?: number; // défaut 1.0
+  attrs?: Record<string, unknown>; // ex. has_value → { value, unit } ; attributed_to → { observed, unit }
+  createdAt: string;
+}
+
+export type Verdict = "success" | "failure" | "partial";
+export type ThresholdOperator = "<" | ">" | "=";
+
+/** Verdict scientifique d'un run, SAISI par le chercheur (pas dérivable). */
+export interface Outcome {
+  id: Id;
+  ws: Ws;
+  runId: Id;
+  verdict: Verdict;
+  metric?: Quantity; // ex. { value: 82, unit: "% viability" }
+  reason?: string; // "no bands", "contamination"…
+  createdAt: string;
+}
+
+/** Règle causale `condition (seuil) → verdict + mécanisme`, extraite des ⚠️
+ *  d'un protocole et rattachée à un ParameterType canonique. */
+export interface FailureMode {
+  id: Id;
+  ws: Ws;
+  protocolId: Id;
+  paramTypeKey?: string; // clé canonique (absent pour une cause qualitative sans paramètre)
+  operator?: ThresholdOperator; // règle numérique
+  threshold?: number;
+  unit?: string;
+  trigger?: string; // condition qualitative ("contamination", "PBS au lieu du milieu")
+  verdict: Verdict; // requis
+  mechanism: string; // requis
+  sourceRef?: SourceRef;
+  createdAt: string;
+}
+
+/** Concept de paramètre canonique, hub partagé entre protocoles/runs. */
+export interface ParameterType {
+  id: Id;
+  ws: Ws;
+  key: string;
+  label: string;
+  unit: string;
+  aliases: string[];
   createdAt: string;
 }
 

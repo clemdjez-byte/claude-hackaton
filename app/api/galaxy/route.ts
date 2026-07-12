@@ -31,7 +31,14 @@ export async function GET() {
     nodes.push({ id: o.run.id, kind: "run", label: o.protocolTitle, params: { runId: o.run.id } });
   }
 
-  const edges: GEdge[] = rawEdges.map((e) => ({ from: e.fromId, to: e.toId }));
+  // Le knowledge graph enrichi crée des arêtes vers des entités sans nœud visuel
+  // (parameter_type, reagent, outcome, failure_mode, publication…). On ne garde
+  // que les arêtes dont les deux extrémités ont un nœud rendu, pour éviter des
+  // arêtes pendantes dans la galaxie (mode ponytail : filtrer, sans étendre le layout).
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges: GEdge[] = rawEdges
+    .filter((e) => ids.has(e.fromId) && ids.has(e.toId))
+    .map((e) => ({ from: e.fromId, to: e.toId }));
 
   return Response.json({ nodes, edges });
 }

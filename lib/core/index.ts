@@ -24,6 +24,9 @@ export type {
   NewEvidence,
   NewEmbedding,
   NewEdge,
+  NewOutcome,
+  NewFailureMode,
+  NewParameterType,
 } from "./db";
 export { createDb, getDb } from "./sqlite";
 

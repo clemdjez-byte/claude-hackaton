@@ -4,12 +4,14 @@
 // existent DÉJÀ (protocol, run, reagent, report…) ; les arêtes vivent dans la
 // table kg_edge (via db.insertEdge / db.listEdges). Aucune donnée dupliquée :
 // le graphe ne stocke que des liens, jamais le contenu des entités.
-import { assertEnabled, type Db, type KgEdge, type Ws } from "@/lib/core";
+import { assertEnabled, type Db, type EdgeProvenance, type KgEdge, type Ws } from "@/lib/core";
+import type { KgNode } from "./ontology";
 
 export type { KgEdge } from "@/lib/core";
 
-/** Référence polymorphe vers une entité existante (une ligne d'une autre brique). */
-export type KgNode = { type: string; id: string };
+/** Référence polymorphe vers une entité existante (une ligne d'une autre brique).
+ *  Source unique de vérité : définie dans ontology.ts, re-exportée ici. */
+export type { KgNode } from "./ontology";
 
 /** Sens de parcours d'une arête depuis un nœud donné. */
 export type Direction = "out" | "in";
@@ -29,13 +31,15 @@ function nodeKey(n: KgNode): string {
 
 // ── Interface publique ─────────────────────────────────────────────────────
 
-/** Crée une arête typée `from -relation-> to` dans le workspace `ws`. */
+/** Crée une arête typée `from -relation-> to`. `opts` porte la provenance,
+ *  la confiance et des attributs libres (ex. has_value → { value, unit }). */
 export async function link(
   db: Db,
   ws: Ws,
   from: KgNode,
   relation: string,
-  to: KgNode
+  to: KgNode,
+  opts?: { provenance?: EdgeProvenance; confidence?: number; attrs?: Record<string, unknown> }
 ): Promise<KgEdge> {
   assertEnabled("knowledgeGraph");
   return db.insertEdge({
@@ -45,6 +49,9 @@ export async function link(
     fromId: from.id,
     toType: to.type,
     toId: to.id,
+    provenance: opts?.provenance ?? "derived",
+    confidence: opts?.confidence ?? 1,
+    attrs: opts?.attrs,
   });
 }
 

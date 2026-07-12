@@ -30,6 +30,9 @@ import {
 } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
 import { indexProtocol, indexEvidence, indexRun, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
+import { saveOutcome } from "@/lib/retrieval/knowledge-graph/outcome";
+import { indexProtocolGraph, indexRunGraph } from "@/lib/kg";
+import type { Verdict } from "@/lib/core";
 
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
 
@@ -53,6 +56,7 @@ export async function publishProtocolAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
   const protocol = await publishProtocol(store, protocolId);
   await indexProtocol(store, protocol);
+  await indexProtocolGraph(store, protocol);
 }
 
 /** Fige une version immuable depuis le brouillon (draft_doc), sans publier. */
@@ -60,6 +64,7 @@ export async function sealDraftAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
   const { protocol } = await sealDraft(store, protocolId);
   await indexProtocol(store, protocol);
+  await indexProtocolGraph(store, protocol);
 }
 
 /** Fige une version depuis le brouillon puis démarre un run dessus (épingle
@@ -73,6 +78,7 @@ export async function startRunAction(
   const { store, ctx } = getBenchSession();
   const { version, protocol } = await sealDraft(store, protocolId);
   await indexProtocol(store, protocol);
+  await indexProtocolGraph(store, protocol);
   const runCtx = await startRun(store, WS, {
     operator: ctx.userId,
     protocolId,
@@ -171,4 +177,22 @@ export async function completeRunAction(runId: string): Promise<{ runId: string 
     // best-effort — le panneau rapport régénère au chargement si absent
   }
   return { runId };
+}
+
+/** Enregistre le verdict scientifique saisi par le chercheur pour un run terminé,
+ *  puis peuple le graphe du run (extraction IA + attribution causale). Best-effort
+ *  côté graphe : la saisie du verdict reste prioritaire. Pas de revalidatePath —
+ *  le panneau rapport recharge via son GET (cf. en-tête de fichier). */
+export async function saveOutcomeAction(
+  runId: string,
+  input: { verdict: Verdict; metricValue?: number; metricUnit?: string; reason?: string }
+): Promise<void> {
+  const { store } = getBenchSession();
+  const metric =
+    input.metricValue != null && input.metricUnit
+      ? { value: input.metricValue, unit: input.metricUnit }
+      : undefined;
+  const outcome = await saveOutcome(store, { ws: WS, runId, verdict: input.verdict, metric, reason: input.reason });
+  const ctx = await getRunContext(store, runId);
+  if (ctx) await indexRunGraph(store, ctx.run, ctx.steps, ctx.protocol, outcome);
 }

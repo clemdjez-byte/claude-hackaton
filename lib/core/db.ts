@@ -12,12 +12,15 @@
 import { randomBytes } from "node:crypto";
 import type {
   Evidence,
+  FailureMode,
   Fichier,
   Folder,
   Id,
   KgEdge,
   MemoryEntry,
+  Outcome,
   Page,
+  ParameterType,
   Run,
   Step,
   Ws,
@@ -52,6 +55,9 @@ export type NewEmbedding = {
 };
 export type NewEdge = Omit<KgEdge, "id" | "createdAt">;
 export type NewFolder = { ws: Ws; name: string; parentId?: Id | null };
+export type NewOutcome = Omit<Outcome, "id" | "createdAt">;
+export type NewFailureMode = Omit<FailureMode, "id" | "createdAt">;
+export type NewParameterType = Omit<ParameterType, "id" | "createdAt">;
 
 export interface Db {
   // pages (protocol | workflow | report) — primitive versionnée
@@ -100,6 +106,14 @@ export interface Db {
     ws: Ws,
     opts?: { relation?: string; fromId?: Id; toId?: Id }
   ): Promise<KgEdge[]>;
+
+  // knowledge graph — entités (outcome saisi, failure mode extrait, vocabulaire de params)
+  insertOutcome(o: NewOutcome): Promise<Outcome>;
+  getOutcomeByRun(runId: Id): Promise<Outcome | null>;
+  insertFailureMode(f: NewFailureMode): Promise<FailureMode>;
+  listFailureModes(ws: Ws, opts?: { protocolId?: Id; paramTypeKey?: string }): Promise<FailureMode[]>;
+  upsertParameterType(pt: NewParameterType): Promise<ParameterType>;
+  listParameterTypes(ws: Ws): Promise<ParameterType[]>;
 
   close(): void;
 }
