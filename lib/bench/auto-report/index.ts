@@ -15,6 +15,7 @@ import {
 import { z } from "zod";
 import { getRunContext, type RunContext } from "../live-bench";
 import { listEvidence } from "../evidence-capture";
+import { describePhotos } from "./describe-photos";
 
 export interface StoredReport {
   id: Id; // id de la page report
@@ -44,7 +45,7 @@ interface ReportFacts {
   planned: string;
   performed: string;
   result: string; // HTML de la section « Result » (images inline + mesures/notes)
-  observed: string;
+  observed: string; // HTML de la section « Observed » (notes/data en texte, photos inline)
   interpretation: string;
   deviations: string[];
   openQuestions: string[];
@@ -74,20 +75,30 @@ export async function generateReport(db: Db, runId: Id): Promise<StoredReport> {
     : null;
   const resultStepId = resultRunStep?.id;
 
+  // Description vision de TOUTES les photos du run (Results et autres étapes),
+  // best-effort : embarquée dans le HTML via data-description, jamais bloquante.
+  const stepTitles = new Map(ctx.steps.map((s) => [s.id, s.title]));
+  const descriptions = await describePhotos(
+    db,
+    evidence
+      .filter((e) => e.kind === "photo")
+      .map((e) => ({ evidence: e, stepTitle: e.stepId ? stepTitles.get(e.stepId) : undefined }))
+  );
+
   const planned = buildPlanned(ctx);
   const performed = buildPerformed(ctx, evidence, resultStepId);
-  const result = buildResult(evidence, resultStepId);
-  const observed = buildObserved(evidence, resultStepId);
+  const result = buildResult(evidence, descriptions, resultStepId);
+  const observed = buildObserved(evidence, descriptions, resultStepId);
   const deviations = buildDeviations(evidence);
   const citations = buildCitations(evidence);
 
-  // Le LLM garde le contexte complet : on lui donne le résultat en texte (les
-  // images deviennent « [Photo: …] ») bien qu'il soit sorti d'Observed/Performed.
+  // Le LLM garde le contexte complet : on lui donne le résultat et l'observé en
+  // texte (les images deviennent « [Photo: caption — description] »).
   const narrative = await buildNarrative({
     ctx,
     planned,
     performed,
-    observed,
+    observed: htmlToText(observed),
     result: htmlToText(result),
     deviations,
   });
@@ -173,41 +184,67 @@ function buildPerformed(ctx: RunContext, evidence: Evidence[], resultStepId?: Id
   return lines.join("\n");
 }
 
-function buildObserved(evidence: Evidence[], resultStepId?: Id): string {
+/** Section « Observed » (HTML) : notes et fichiers data en blocs texte, photos
+ *  en VRAIES images inline — le chercheur peut ensuite les masquer ou les
+ *  supprimer dans l'éditeur, mais elles ne disparaissent jamais en silence. */
+function buildObserved(
+  evidence: Evidence[],
+  descriptions: Map<Id, string>,
+  resultStepId?: Id
+): string {
   // Les preuves rattachées à l'étape « Results » sont rendues dans la section
   // Result (images inline) — on les exclut ici pour ne pas les compter deux fois.
   const observed = evidence.filter((e) => e.stepId !== resultStepId);
   const notes = observed.filter((e) => e.kind === "note");
   const photos = observed.filter((e) => e.kind === "photo");
   const dataFiles = observed.filter((e) => e.kind === "data");
-  const lines: string[] = [];
-  for (const nn of notes) lines.push(`Note: ${nn.body} [${nn.id}]`);
-  for (const p of photos) lines.push(`Photo${p.body ? ` (${p.body})` : ""} [${p.id}]`);
-  for (const d of dataFiles)
-    lines.push(`Data file: ${d.source?.label ?? d.body ?? "file"} [${d.id}]`);
-  if (lines.length === 0) lines.push("No qualitative observation recorded.");
-  return lines.join("\n");
+  const parts: string[] = [];
+  if (notes.length)
+    parts.push(textBlockHtml(notes.map((nn) => `Note: ${nn.body} [${nn.id}]`).join("\n")));
+  for (const p of photos) parts.push(photoHtml(p, descriptions.get(p.id)));
+  if (dataFiles.length)
+    parts.push(
+      textBlockHtml(
+        dataFiles.map((d) => `Data file: ${d.source?.label ?? d.body ?? "file"} [${d.id}]`).join("\n")
+      )
+    );
+  if (parts.length === 0) parts.push("<p>No qualitative observation recorded.</p>");
+  return parts.join("\n");
+}
+
+/** Bloc image d'une preuve photo — utilisé par Result ET Observed. La
+ *  description vision (si présente) voyage dans data-description : pas de
+ *  nouvel objet en base, le HTML du rapport est la seule source de vérité.
+ *  Pas de data-hidden à la génération : les photos naissent visibles, seul
+ *  l'éditeur (ReportImage) écrit cet attribut. */
+function photoHtml(e: Evidence, description?: string): string {
+  // Console de run → source.ref ; brique capturePhoto → fileId. /api/files sert par id de fichier.
+  const fileId = e.fileId ?? e.source?.ref;
+  const alt = escapeHtml(e.body ?? e.source?.label ?? "Photo");
+  if (!fileId) return `<p>[Photo: ${alt}]</p>`;
+  const desc = description?.trim()
+    ? ` data-description="${escapeHtml(description.trim())}"`
+    : "";
+  return `<p><img src="/api/files/${escapeHtml(fileId)}" alt="${alt}"${desc}></p>`;
 }
 
 /** Section « Result » : les preuves consignées sur l'étape « Results » du run.
  *  Les photos sont rendues en VRAIES images inline (`/api/files/{id}`), les
  *  fichiers de données en liens, les mesures/notes en texte. Vide (placeholder)
  *  si le protocole n'a pas d'étape Results ou si rien n'y a été attaché. */
-function buildResult(evidence: Evidence[], resultStepId?: Id): string {
+function buildResult(
+  evidence: Evidence[],
+  descriptions: Map<Id, string>,
+  resultStepId?: Id
+): string {
   const items = resultStepId ? evidence.filter((e) => e.stepId === resultStepId) : [];
   if (items.length === 0)
     return `<p><em>No result recorded yet — capture photos, measurements or data files on the Results step.</em></p>`;
   const parts: string[] = [];
   for (const e of items) {
-    // Console de run → source.ref ; brique capturePhoto → fileId. /api/files sert par id de fichier.
     const fileId = e.fileId ?? e.source?.ref;
     if (e.kind === "photo") {
-      const alt = escapeHtml(e.body ?? e.source?.label ?? "Result photo");
-      parts.push(
-        fileId
-          ? `<p><img src="/api/files/${escapeHtml(fileId)}" alt="${alt}"></p>`
-          : `<p>[Photo: ${alt}]</p>`
-      );
+      parts.push(photoHtml(e, descriptions.get(e.id)));
     } else if (e.kind === "data") {
       const label = escapeHtml(e.source?.label ?? e.body ?? "data file");
       parts.push(
@@ -341,7 +378,7 @@ function renderHtml(meta: { protocolTitle: string; generatedAt: string; runId: I
     sectionHtml("Planned", textBlockHtml(f.planned)),
     sectionHtml("Performed", textBlockHtml(f.performed)),
     sectionHtml("Result", f.result),
-    sectionHtml("Observed", textBlockHtml(f.observed)),
+    sectionHtml("Observed", f.observed),
     sectionHtml("Deviations", listHtml(f.deviations, "None.")),
     sectionHtml("Interpretation (to be validated)", textBlockHtml(f.interpretation)),
     sectionHtml("Open questions", listHtml(f.openQuestions, "None.")),
@@ -359,9 +396,17 @@ export function htmlToText(html: string): string {
     .replace(/<h3[^>]*>/gi, "\n### ")
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<br\s*\/?>/gi, "\n")
-    // Les images (section Result) : on garde une trace textuelle de la légende.
-    .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "[Photo: $1]")
-    .replace(/<img[^>]*>/gi, "[Photo]")
+    // Les images : trace textuelle légende + description vision, quel que soit
+    // l'ordre des attributs (Tiptap peut les réordonner à la re-sérialisation).
+    // Les photos masquées (data-hidden) restent incluses : jamais de perte
+    // silencieuse dans l'export / l'indexation.
+    .replace(/<img\b[^>]*>/gi, (tag) => {
+      const alt = /\balt="([^"]*)"/i.exec(tag)?.[1] ?? "";
+      const desc = /\bdata-description="([^"]*)"/i.exec(tag)?.[1] ?? "";
+      if (alt && desc) return `[Photo: ${alt} — ${desc}]`;
+      if (desc) return `[Photo — ${desc}]`;
+      return alt ? `[Photo: ${alt}]` : "[Photo]";
+    })
     // Fermetures de blocs "reconnus" : liste explicite de tags de bloc, dont
     // les tags de table (cellules/lignes : l'éditeur permet maintenant d'en
     // insérer) — sans ça, "<td>A</td><td>B</td>" devient "AB" au lieu de deux

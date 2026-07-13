@@ -6,21 +6,39 @@
 // repasse en lecture seule ; « New revision » rouvre une version éditable.
 import { useEffect, useRef, useState } from "react";
 import { useDebouncedCallback } from "use-debounce";
-import Image from "@tiptap/extension-image";
 import { NoteEditor } from "@/app/components/NoteEditor";
+import { ReportImage } from "./ReportImage";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { StoredReport } from "@/lib/bench/auto-report";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-// Le rapport peut porter des images (section Result) : sans ce node, Tiptap
+// Le rapport porte des images (photos du run) : sans ce node, Tiptap
 // stripperait les <img> dès la première frappe (l'autosave re-sérialise le doc).
+// ReportImage étend Image (mêmes nom/schéma) avec les contrôles hide/description.
 // Activé UNIQUEMENT ici — l'éditeur de protocole n'en a pas besoin.
-const reportExtensions = [Image.configure({ inline: false, allowBase64: false })];
+const reportExtensions = [ReportImage];
 
 // Auteur affiché sur les brouillons (mono-utilisateur). Les rapports signés
 // portent leur propre report.signedBy.
 const AUTHOR = "Clément Djezvedjian";
+
+// Conteneur de scroll d'un élément = premier ancêtre en overflow-y auto/scroll.
+// Sert de `root` à l'IntersectionObserver du verrou de relecture : la fenêtre
+// du shell (.win-body) peut dépasser le viewport, donc on observe par rapport à
+// ce conteneur, pas à l'écran. On NE teste PAS scrollHeight>clientHeight : au
+// montage, Tiptap n'a pas fini de rendre → le conteneur ne déborde pas encore,
+// et cette condition ferait retomber l'IO sur le viewport (verrou jamais levé).
+// null (viewport) en repli si aucun ancêtre scrollable.
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  let n = el.parentElement;
+  while (n) {
+    const oy = getComputedStyle(n).overflowY;
+    if (oy === "auto" || oy === "scroll") return n;
+    n = n.parentElement;
+  }
+  return null;
+}
 
 // JJ/MM/AAAA depuis un ISO stocké (pas de dépendance au fuseau).
 function dateFR(iso: string): string {
@@ -65,6 +83,13 @@ export default function ReportEditor({ runId }: { runId: string }) {
   // await (un `saveState` lu par closure resterait figé sur sa valeur au
   // moment où handleSign a démarré).
   const saveStateRef = useRef<SaveState>("idle");
+  // Verrou de relecture : on ne peut signer qu'après avoir déroulé le rapport
+  // jusqu'en bas (sentinelle observée). On mémorise POUR QUELLE version le bas
+  // a été atteint : une nouvelle version (sign / new revision) exige une
+  // nouvelle relecture, sans jamais réinitialiser d'état dans un effet.
+  const [reachedKey, setReachedKey] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const reachedEnd = report !== null && reachedKey === `${report.id}:${report.version}`;
 
   function applySaveState(s: SaveState) {
     saveStateRef.current = s;
@@ -130,8 +155,33 @@ export default function ReportEditor({ runId }: { runId: string }) {
     save.flush();
   }, [save]);
 
+  // Sentinelle en bas du document : on déverrouille la signature quand elle
+  // devient visible (= rapport déroulé jusqu'au bout). L'IO doit observer par
+  // rapport au CONTENEUR DE SCROLL (.win-body de la fenêtre), pas au viewport :
+  // la fenêtre peut dépasser le bas de l'écran, la sentinelle resterait alors
+  // sous le viewport même scroll au max et le verrou ne se lèverait jamais.
+  // Rapport court qui tient sans scroll : la sentinelle est visible d'emblée →
+  // callback initial de l'IO → déverrouillage immédiat.
+  useEffect(() => {
+    if (!report || report.signedAt) return;
+    const el = endRef.current;
+    if (!el) return;
+    const key = `${report.id}:${report.version}`;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setReachedKey(key);
+          io.disconnect();
+        }
+      },
+      { root: scrollParent(el), threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [report]);
+
   async function handleSign() {
-    if (!report || report.signedAt || !htmlRef.current.trim()) return;
+    if (!report || report.signedAt || !htmlRef.current.trim() || !reachedEnd) return;
     if (saveState === "error") {
       setActionError("Last autosave failed — fix your connection and wait for a successful save before signing.");
       return;
@@ -233,6 +283,9 @@ export default function ReportEditor({ runId }: { runId: string }) {
               {saveState === "error" && <span className="text-danger">Save failed</span>}
             </span>
           )}
+          {!signed && !reachedEnd && (
+            <span className="mono-display text-[12px] text-muted">Review to the end to sign</span>
+          )}
           {signed ? (
             <button
               type="button"
@@ -246,7 +299,8 @@ export default function ReportEditor({ runId }: { runId: string }) {
             <button
               type="button"
               onClick={handleSign}
-              disabled={busy || !hasHtml}
+              disabled={busy || !hasHtml || !reachedEnd}
+              title={reachedEnd ? undefined : "Scroll to the end of the report to review it before signing"}
               className="report-meta-btn disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? "…" : `Sign V${report.version}`}
@@ -275,6 +329,9 @@ export default function ReportEditor({ runId }: { runId: string }) {
           }}
         />
       </div>
+
+      {/* Sentinelle du verrou de relecture — dernier élément du document. */}
+      <div ref={endRef} aria-hidden style={{ height: 1 }} />
     </div>
   );
 }

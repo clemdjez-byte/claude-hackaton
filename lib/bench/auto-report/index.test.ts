@@ -10,7 +10,7 @@ import {
   capturePhoto,
   capturePhotoRef,
 } from "../evidence-capture";
-import { generateReport, getReport, exportReportMarkdown } from "./index";
+import { generateReport, getReport, exportReportMarkdown, htmlToText } from "./index";
 
 /** Extrait le HTML d'une section `<h2>Titre</h2> … <h2>…` du document. */
 function section(html: string, title: string): string {
@@ -177,5 +177,65 @@ describe("Auto Report — section Result (images inline)", () => {
     expect(report.html).toContain("<h2>Result</h2>");
     expect(section(report.html, "Result")).toMatch(/No result recorded yet/i);
     d.close();
+  });
+});
+
+describe("Auto Report — photos hors Results (section Observed)", () => {
+  it("rend une photo d'une étape quelconque en image inline dans Observed", async () => {
+    const d = createDb(":memory:");
+    const proto = await seedReferenceProtocol(d, "lab1");
+    const ctx = await startRun(d, "lab1", { operator: "u1", protocolId: proto.id, params: { n_reactions: 24 } });
+    const mmStep = ctx.steps.find((s) => /master mix qpcr/i.test(s.title))!;
+    await capturePhoto(
+      d,
+      "lab1",
+      ctx.run.id,
+      mmStep.id,
+      { bytes: Buffer.from("fakepng"), mime: "image/png", sha256: "abc123def456" },
+      "u1",
+      "Tube rack"
+    );
+    await completeRun(d, ctx.run.id);
+    const report = await generateReport(d, ctx.run.id);
+
+    const observedSection = section(report.html, "Observed");
+    expect(observedSection).toContain('<img src="/api/files/');
+    expect(observedSection).toContain('alt="Tube rack"');
+    expect(observedSection).not.toMatch(/No qualitative observation/i);
+    // Trace textuelle dans l'export/MCP.
+    expect(await exportReportMarkdown(d, ctx.run.id)).toContain("[Photo: Tube rack]");
+    // Sans clé LLM (beforeAll), aucune description vision embarquée.
+    expect(report.html).not.toContain("data-description=");
+    d.close();
+  });
+});
+
+describe("htmlToText — photos avec description vision", () => {
+  it("combine légende et description, quel que soit l'ordre des attributs", () => {
+    expect(
+      htmlToText('<p><img src="/api/files/f1" alt="Gel" data-description="Two bands at ~200 bp"></p>')
+    ).toContain("[Photo: Gel — Two bands at ~200 bp]");
+    expect(
+      htmlToText('<p><img data-description="Two bands at ~200 bp" src="/api/files/f1" alt="Gel"></p>')
+    ).toContain("[Photo: Gel — Two bands at ~200 bp]");
+  });
+
+  it("garde la trace d'une photo masquée (data-hidden) — jamais de perte silencieuse", () => {
+    expect(
+      htmlToText('<p><img src="/api/files/f1" alt="Gel" data-hidden="true"></p>')
+    ).toContain("[Photo: Gel]");
+  });
+
+  it("décode les entités HTML dans la description", () => {
+    expect(
+      htmlToText('<p><img src="/api/files/f1" alt="Gel" data-description="band &quot;A&quot; &amp; B"></p>')
+    ).toContain('[Photo: Gel — band "A" & B]');
+  });
+
+  it("repli sans légende : description seule, ou [Photo] nu", () => {
+    expect(htmlToText('<img src="/api/files/f1" alt="" data-description="A pipette">')).toContain(
+      "[Photo — A pipette]"
+    );
+    expect(htmlToText('<img src="/api/files/f1">')).toContain("[Photo]");
   });
 });
