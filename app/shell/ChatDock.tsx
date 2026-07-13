@@ -10,7 +10,7 @@ import { useChatComposer } from "@/app/chat/ChatComposerContext";
 import ComposerBar from "@/app/chat/ComposerBar";
 
 export function ChatDock() {
-  const { windows } = useWindowsContext();
+  const { windows, open } = useWindowsContext();
   const { submit } = useChatComposer();
   const chatOpen = windows.some((w) => w.kind === "chat");
   const [text, setText] = useState("");
@@ -47,6 +47,7 @@ export function ChatDock() {
         onPickTool={setTool}
         placeholder="Ask Octopus…"
         grip
+        onOpen={() => open("chat")}
         hintKbd="⌘K"
         inputRef={inputRef}
       />
