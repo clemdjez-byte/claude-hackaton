@@ -444,6 +444,7 @@ button, a {
     color: var(--muted); cursor: pointer; transition: opacity 140ms ease, color 140ms ease, background 140ms ease;
   }
   .conv-item:hover .conv-del { opacity: 1; }
+  .conv-item:focus-within .conv-del { opacity: 1; }
   .conv-del:hover { background: var(--surface-3); color: var(--danger); }
   .conv-empty { font-size: 12px; color: var(--muted); padding: 8px 9px; }
 }

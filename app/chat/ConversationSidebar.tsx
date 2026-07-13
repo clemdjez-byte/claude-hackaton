@@ -29,7 +29,7 @@ export default function ConversationSidebar({
     );
   }
   return (
-    <aside className="conv-sidebar">
+    <aside className="conv-sidebar" aria-label="Conversation history">
       <div className="conv-head">
         <button type="button" className="conv-new" onClick={onCreate}>+ New discussion</button>
         <button type="button" className="conv-collapse" onClick={onToggle} title="Hide history" aria-label="Hide history">
