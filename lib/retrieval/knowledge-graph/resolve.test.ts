@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createDb } from "@/lib/core";
 import { reconcileAndLink, loadKnownEntities } from "./resolve";
 import { NODE } from "./ontology";
-import type { Db } from "@/lib/core";
 import type { OpenGraph } from "./extract";
 
 beforeEach(() => { process.env.FEATURE_KNOWLEDGE_GRAPH = "true"; });

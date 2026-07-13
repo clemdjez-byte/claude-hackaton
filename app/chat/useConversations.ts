@@ -65,9 +65,16 @@ export function useConversations() {
 
   // Hydratation client-only (évite tout mismatch SSR).
   useEffect(() => {
-    const list = load();
-    setState({ list, activeId: list[0]?.id ?? null });
-    setReady(true);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const list = load();
+      setState({ list, activeId: list[0]?.id ?? null });
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Persistance après hydratation.
