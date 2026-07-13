@@ -43,6 +43,7 @@ interface ReportFacts {
   objective: string;
   planned: string;
   performed: string;
+  result: string; // HTML de la section « Result » (images inline + mesures/notes)
   observed: string;
   interpretation: string;
   deviations: string[];
@@ -65,18 +66,37 @@ export async function generateReport(db: Db, runId: Id): Promise<StoredReport> {
   if (!ctx) throw new Error(`Run introuvable : ${runId}`);
   const evidence = await listEvidence(db, runId);
 
+  // Étape « Results » du protocole figé → run step correspondant → son id. Sert
+  // à isoler les preuves du « résultat » (section dédiée) du reste des observations.
+  const resultProto = ctx.protocol.steps.find((s) => s.isResult) ?? null;
+  const resultRunStep = resultProto
+    ? ctx.steps.find((s) => s.protocolStepIndex === resultProto.index) ?? null
+    : null;
+  const resultStepId = resultRunStep?.id;
+
   const planned = buildPlanned(ctx);
-  const performed = buildPerformed(ctx, evidence);
-  const observed = buildObserved(evidence);
+  const performed = buildPerformed(ctx, evidence, resultStepId);
+  const result = buildResult(evidence, resultStepId);
+  const observed = buildObserved(evidence, resultStepId);
   const deviations = buildDeviations(evidence);
   const citations = buildCitations(evidence);
 
-  const narrative = await buildNarrative({ ctx, planned, performed, observed, deviations });
+  // Le LLM garde le contexte complet : on lui donne le résultat en texte (les
+  // images deviennent « [Photo: …] ») bien qu'il soit sorti d'Observed/Performed.
+  const narrative = await buildNarrative({
+    ctx,
+    planned,
+    performed,
+    observed,
+    result: htmlToText(result),
+    deviations,
+  });
 
   const facts: ReportFacts = {
     objective: ctx.protocol.summary ?? ctx.protocol.title,
     planned,
     performed,
+    result,
     observed,
     interpretation: narrative.interpretation,
     deviations,
@@ -136,14 +156,15 @@ function buildPlanned(ctx: RunContext): string {
   return lines.join("\n");
 }
 
-function buildPerformed(ctx: RunContext, evidence: Evidence[]): string {
+function buildPerformed(ctx: RunContext, evidence: Evidence[], resultStepId?: Id): string {
   const lines: string[] = [];
   for (const s of ctx.steps) {
     const dur = stepDurationMin(s.startedAt, s.completedAt);
     const durTxt = dur != null ? ` (${dur} min)` : "";
     lines.push(`Step ${s.protocolStepIndex + 1} "${s.title}": ${statusLabel(s.status)}${durTxt}.`);
   }
-  const measurements = evidence.filter((e) => e.kind === "measurement");
+  // Les mesures de l'étape « Results » vivent dans la section Result.
+  const measurements = evidence.filter((e) => e.kind === "measurement" && e.stepId !== resultStepId);
   if (measurements.length) {
     lines.push("Measurements recorded:");
     for (const m of measurements)
@@ -152,10 +173,13 @@ function buildPerformed(ctx: RunContext, evidence: Evidence[]): string {
   return lines.join("\n");
 }
 
-function buildObserved(evidence: Evidence[]): string {
-  const notes = evidence.filter((e) => e.kind === "note");
-  const photos = evidence.filter((e) => e.kind === "photo");
-  const dataFiles = evidence.filter((e) => e.kind === "data");
+function buildObserved(evidence: Evidence[], resultStepId?: Id): string {
+  // Les preuves rattachées à l'étape « Results » sont rendues dans la section
+  // Result (images inline) — on les exclut ici pour ne pas les compter deux fois.
+  const observed = evidence.filter((e) => e.stepId !== resultStepId);
+  const notes = observed.filter((e) => e.kind === "note");
+  const photos = observed.filter((e) => e.kind === "photo");
+  const dataFiles = observed.filter((e) => e.kind === "data");
   const lines: string[] = [];
   for (const nn of notes) lines.push(`Note: ${nn.body} [${nn.id}]`);
   for (const p of photos) lines.push(`Photo${p.body ? ` (${p.body})` : ""} [${p.id}]`);
@@ -163,6 +187,39 @@ function buildObserved(evidence: Evidence[]): string {
     lines.push(`Data file: ${d.source?.label ?? d.body ?? "file"} [${d.id}]`);
   if (lines.length === 0) lines.push("No qualitative observation recorded.");
   return lines.join("\n");
+}
+
+/** Section « Result » : les preuves consignées sur l'étape « Results » du run.
+ *  Les photos sont rendues en VRAIES images inline (`/api/files/{id}`), les
+ *  fichiers de données en liens, les mesures/notes en texte. Vide (placeholder)
+ *  si le protocole n'a pas d'étape Results ou si rien n'y a été attaché. */
+function buildResult(evidence: Evidence[], resultStepId?: Id): string {
+  const items = resultStepId ? evidence.filter((e) => e.stepId === resultStepId) : [];
+  if (items.length === 0)
+    return `<p><em>No result recorded yet — capture photos, measurements or data files on the Results step.</em></p>`;
+  const parts: string[] = [];
+  for (const e of items) {
+    // Console de run → source.ref ; brique capturePhoto → fileId. /api/files sert par id de fichier.
+    const fileId = e.fileId ?? e.source?.ref;
+    if (e.kind === "photo") {
+      const alt = escapeHtml(e.body ?? e.source?.label ?? "Result photo");
+      parts.push(
+        fileId
+          ? `<p><img src="/api/files/${escapeHtml(fileId)}" alt="${alt}"></p>`
+          : `<p>[Photo: ${alt}]</p>`
+      );
+    } else if (e.kind === "data") {
+      const label = escapeHtml(e.source?.label ?? e.body ?? "data file");
+      parts.push(
+        fileId ? `<p><a href="/api/files/${escapeHtml(fileId)}">${label}</a></p>` : `<p>${label}</p>`
+      );
+    } else if (e.kind === "measurement" && e.measurement) {
+      parts.push(`<p>${escapeHtml(e.body ?? `${e.measurement.value} ${e.measurement.unit}`)}</p>`);
+    } else if (e.body) {
+      parts.push(textBlockHtml(e.body));
+    }
+  }
+  return parts.join("\n");
 }
 
 function buildDeviations(evidence: Evidence[]): string[] {
@@ -187,9 +244,10 @@ async function buildNarrative(args: {
   planned: string;
   performed: string;
   observed: string;
+  result: string;
   deviations: string[];
 }): Promise<z.infer<typeof NarrativeSchema>> {
-  const { planned, performed, observed, deviations } = args;
+  const { planned, performed, observed, result, deviations } = args;
   // Repli déterministe : jamais de chiffre inventé. Utilisé sans clé LLM,
   // mais aussi si l'appel LLM échoue (clé invalide, réseau, quota…) — un
   // rapport sans interprétation rédigée vaut mieux que pas de rapport.
@@ -222,6 +280,9 @@ ${planned}
 
 ## Performed
 ${performed}
+
+## Result
+${result}
 
 ## Observed
 ${observed}
@@ -279,6 +340,7 @@ function renderHtml(meta: { protocolTitle: string; generatedAt: string; runId: I
     sectionHtml("Objective", textBlockHtml(f.objective)),
     sectionHtml("Planned", textBlockHtml(f.planned)),
     sectionHtml("Performed", textBlockHtml(f.performed)),
+    sectionHtml("Result", f.result),
     sectionHtml("Observed", textBlockHtml(f.observed)),
     sectionHtml("Deviations", listHtml(f.deviations, "None.")),
     sectionHtml("Interpretation (to be validated)", textBlockHtml(f.interpretation)),
@@ -297,6 +359,9 @@ export function htmlToText(html: string): string {
     .replace(/<h3[^>]*>/gi, "\n### ")
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<br\s*\/?>/gi, "\n")
+    // Les images (section Result) : on garde une trace textuelle de la légende.
+    .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "[Photo: $1]")
+    .replace(/<img[^>]*>/gi, "[Photo]")
     // Fermetures de blocs "reconnus" : liste explicite de tags de bloc, dont
     // les tags de table (cellules/lignes : l'éditeur permet maintenant d'en
     // insérer) — sans ça, "<td>A</td><td>B</td>" devient "AB" au lieu de deux

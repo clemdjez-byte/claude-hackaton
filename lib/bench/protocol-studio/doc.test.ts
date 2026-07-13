@@ -58,4 +58,15 @@ describe("stepsToDoc / docToSteps", () => {
     };
     expect(() => docToSteps(doc)).toThrow(/titre/i);
   });
+
+  it("préserve isResult au round-trip, sans polluer les étapes ordinaires", () => {
+    const steps: ProtocolStep[] = [
+      { index: 0, title: "Étape", instruction: "faire" },
+      { index: 1, title: "Results", instruction: "consigner le résultat", isResult: true },
+    ];
+    const round = docToSteps(stepsToDoc(steps));
+    expect(round).toEqual(steps);
+    expect(round[0].isResult).toBeUndefined(); // pas de clé parasite sur les étapes normales
+    expect(round[1].isResult).toBe(true);
+  });
 });

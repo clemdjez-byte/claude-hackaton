@@ -18,7 +18,7 @@ import { PROTOCOL_STEP_NODE } from "@/lib/bench/protocol-studio/node-contract";
 export function makeEmptyStep() {
   return {
     type: PROTOCOL_STEP_NODE,
-    attrs: { index: 0, title: "", durationSec: null, temperature: null, critical: false },
+    attrs: { index: 0, title: "", durationSec: null, temperature: null, critical: false, isResult: false },
     content: [{ type: "paragraph" }],
   };
 }
@@ -53,6 +53,9 @@ export const ProtocolStepNode = Node.create({
             : {},
       },
       critical: { default: false },
+      // Étape « Results » : gérée par le système, ajoutée en dernier à la
+      // création du protocole. Pas de toggle utilisateur (badge lecture seule).
+      isResult: { default: false },
     };
   },
 
@@ -101,6 +104,7 @@ function ProtocolStepView({ node, updateAttributes, deleteNode }: NodeViewProps)
   const durationSec = node.attrs.durationSec as number | null;
   const temperature = node.attrs.temperature as { value: number; unit: string } | null;
   const critical = Boolean(node.attrs.critical);
+  const isResult = Boolean(node.attrs.isResult);
 
   const minutes = durationSec != null ? String(Math.round(durationSec / 60)) : "";
 
@@ -140,6 +144,14 @@ function ProtocolStepView({ node, updateAttributes, deleteNode }: NodeViewProps)
         contentEditable={false}
         className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 text-[12px]"
       >
+        {isResult && (
+          <span
+            className="rounded-full bg-accent/10 px-2.5 py-1 text-accent"
+            title="Étape « Results » : consignez ici le résultat (photos, mesures, fichiers). Ajoutée automatiquement, supprimable si inutile."
+          >
+            ★ résultat
+          </span>
+        )}
         <button
           type="button"
           onClick={() => updateAttributes({ critical: !critical })}

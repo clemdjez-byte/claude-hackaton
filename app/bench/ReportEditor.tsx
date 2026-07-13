@@ -6,11 +6,17 @@
 // repasse en lecture seule ; « New revision » rouvre une version éditable.
 import { useEffect, useRef, useState } from "react";
 import { useDebouncedCallback } from "use-debounce";
+import Image from "@tiptap/extension-image";
 import { NoteEditor } from "@/app/components/NoteEditor";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { StoredReport } from "@/lib/bench/auto-report";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+// Le rapport peut porter des images (section Result) : sans ce node, Tiptap
+// stripperait les <img> dès la première frappe (l'autosave re-sérialise le doc).
+// Activé UNIQUEMENT ici — l'éditeur de protocole n'en a pas besoin.
+const reportExtensions = [Image.configure({ inline: false, allowBase64: false })];
 
 // Auteur affiché sur les brouillons (mono-utilisateur). Les rapports signés
 // portent leur propre report.signedBy.
@@ -256,6 +262,7 @@ export default function ReportEditor({ runId }: { runId: string }) {
         <NoteEditor
           key={`${report.id}:${report.version}`}
           initialContent={report.html}
+          extraExtensions={reportExtensions}
           editable={!signed}
           onChange={(html) => {
             htmlRef.current = html;

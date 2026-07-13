@@ -55,7 +55,10 @@ describe("Protocol Studio — generateProtocolFromDocument", () => {
     expect(p.title).toBe("Extracted RT-qPCR");
     expect(p.status).toBe("draft");
     expect(p.version).toBe(1);
-    expect(p.steps.length).toBe(2);
+    // Les 2 étapes du document + l'étape « Results » ajoutée par défaut.
+    expect(p.steps.length).toBe(3);
+    expect(p.steps.slice(0, 2).map((s) => s.title)).toEqual(["Préparer le mix", "Lancer la PCR"]);
+    expect(p.steps[2].isResult).toBe(true);
     expect(p.sources[0].ref).toBe("protocole.pdf");
 
     // Persistant et relisible

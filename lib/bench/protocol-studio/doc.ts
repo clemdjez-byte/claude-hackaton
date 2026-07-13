@@ -39,6 +39,7 @@ export function docToSteps(doc: unknown): ProtocolStep[] {
     if (a.durationSec != null) raw.durationSec = a.durationSec;
     if (a.temperature != null) raw.temperature = a.temperature;
     if (a.critical) raw.critical = true;
+    if (a.isResult) raw.isResult = true;
     const parsed = ProtocolStepSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(`Étape ${index + 1} invalide : ${parsed.error.issues[0]?.message ?? "structure incorrecte"}`);
@@ -60,6 +61,7 @@ export function stepsToDoc(steps: ProtocolStep[]): { type: "doc"; content: unkno
         durationSec: s.durationSec ?? null,
         temperature: s.temperature ?? null,
         critical: s.critical ?? false,
+        isResult: s.isResult ?? false,
       },
       content: [
         { type: "paragraph", content: s.instruction ? [{ type: "text", text: s.instruction }] : [] },

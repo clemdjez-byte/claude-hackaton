@@ -108,6 +108,7 @@ export interface ProtocolStep {
   durationSec?: number; // timer suggéré
   temperature?: Quantity;
   critical?: boolean;
+  isResult?: boolean; // étape « Results » ajoutée par le système (toujours en dernier)
 }
 
 export interface Protocol {

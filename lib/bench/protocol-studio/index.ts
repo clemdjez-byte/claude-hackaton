@@ -7,6 +7,7 @@ import {
   scaleMasterMix,
   type Db,
   type Protocol,
+  type ProtocolStep,
   type Recipe,
   type ResolvedRecipe,
   type Page,
@@ -40,11 +41,32 @@ function pageToProtocol(page: Page): Protocol {
   return { id: page.id, ws: page.ws, version: page.version, ...c };
 }
 
+// ── Étape « Results » par défaut ────────────────────────────────────────────
+// Chaque protocole se termine par une étape où l'opérateur consigne le résultat
+// (photos, mesures, fichiers). Elle alimente la section « Result » du rapport et
+// le rappel « Terminer sans résultat ? » de la console de run. Supprimable dans
+// l'éditeur d'étapes si le protocole ne l'exige pas.
+const RESULT_STEP_TITLE = "Results";
+const RESULT_STEP_INSTRUCTION =
+  "Record the outcome of this experiment here: attach the result photos or screenshots, key measurements, data files, and any notes. This section becomes the Result section of the report.";
+
+/** Garantit exactement UNE étape « Results », en dernier. Idempotent, et
+ *  défensif si le LLM en a marqué une malgré les consignes : on retire toute
+ *  étape déjà marquée, on renumérote, puis on ajoute la nôtre à la fin. */
+function withResultStep(steps: ProtocolStep[]): ProtocolStep[] {
+  const clean = steps.filter((s) => !s.isResult).map((s, index) => ({ ...s, index }));
+  return [
+    ...clean,
+    { index: clean.length, title: RESULT_STEP_TITLE, instruction: RESULT_STEP_INSTRUCTION, isResult: true },
+  ];
+}
+
 // ── CRUD versionné ──────────────────────────────────────────────────────
 export async function createProtocol(db: Db, ws: Ws, draft: ProtocolDraft): Promise<Protocol> {
   assertEnabled("protocolStudio");
   validateDraft(draft);
   const content = draftToContent(draft);
+  content.steps = withResultStep(content.steps); // étape « Results » finale par défaut
   const page = await db.insertPage({
     ws,
     type: "protocol",
@@ -76,6 +98,26 @@ export async function publishProtocol(db: Db, id: Id): Promise<Protocol> {
     throw new Error("Publication refusée : un protocole publié doit citer au moins une source.");
   const { protocol } = await sealDraft(db, id, { status: "published" });
   return protocol;
+}
+
+/** Archive (ou désarchive) un protocole : bascule simplement le statut sur la
+ *  ligne courante, sans nouvelle version figée. Un protocole archivé n'est plus
+ *  activable au bench. Au désarchivage on retombe sur `published` s'il cite au
+ *  moins une source, sinon `draft`. */
+export async function setProtocolArchived(db: Db, id: Id, archived: boolean): Promise<Protocol> {
+  assertEnabled("protocolStudio");
+  const cur = await getProtocol(db, id);
+  if (!cur) throw new Error(`Protocole introuvable : ${id}`);
+  const status: Protocol["status"] = archived
+    ? "archived"
+    : cur.sources.length > 0
+      ? "published"
+      : "draft";
+  const content: ProtocolContent = { ...toContent(cur), status };
+  await db.updateDraft(id, { title: content.title, content });
+  const updated = await getProtocol(db, id);
+  if (!updated) throw new Error(`Protocole introuvable après archivage : ${id}`);
+  return updated;
 }
 
 /** Fige une version IMMUABLE depuis le brouillon (draft_doc) : dérive les étapes,
@@ -129,19 +171,20 @@ export async function listProtocols(
 }
 
 // ── Génération / adaptation par Claude (Sonnet 5) ───────────────────────
-const GEN_SYSTEM = `Tu es un assistant de laboratoire précis et sourcé.
-Tu produis des protocoles de biologie moléculaire structurés et RÉALISTES.
-Règles absolues :
-- N'invente jamais une valeur : chaque affirmation notable porte une source (sources[]).
-- La recette (master mix) est donnée PAR RÉACTION uniquement. Ne calcule JAMAIS de volume mis à l'échelle : le scaling est fait par du code déterministe, pas par toi.
-- Marque critical:true les étapes où une déviation compromet le résultat.
-- Sois concret et concis, ton de chercheur senior. Réponds en français.`;
+const GEN_SYSTEM = `You are a precise, well-sourced laboratory assistant.
+You produce structured, REALISTIC molecular-biology protocols.
+Absolute rules:
+- Never invent a value: every notable claim carries a source (sources[]).
+- The recipe (master mix) is given PER REACTION only. NEVER compute a scaled volume: scaling is done by deterministic code, not by you.
+- Mark critical:true the steps where a deviation compromises the result.
+- Do NOT create a final "results"/"outcome" step and do NOT set isResult: a dedicated "Results" step is appended automatically by the system.
+- Be concrete and concise, in the tone of a senior researcher. Respond in English.`;
 
 export async function generateProtocol(db: Db, ws: Ws, brief: string): Promise<Protocol> {
   assertEnabled("protocolStudio");
   const draft = await generateObjectFor("protocol", {
     system: GEN_SYSTEM,
-    prompt: `Génère un protocole complet et sourcé à partir de cet objectif :\n\n${brief}`,
+    prompt: `Generate a complete, well-sourced protocol from this objective:\n\n${brief}`,
     schema: ProtocolDraftSchema,
   });
   return createProtocol(db, ws, draft);
@@ -154,8 +197,8 @@ export async function adaptProtocol(db: Db, id: Id, instruction: string): Promis
   const draft = await generateObjectFor("protocol", {
     system:
       GEN_SYSTEM +
-      `\nTu ADAPTES un protocole existant. Conserve ce qui n'est pas concerné par la demande. Si la demande change le nombre de réactions/échantillons, mets à jour le paramètre parameters[key=n_reactions].default — mais ne calcule aucun volume mis à l'échelle.`,
-    prompt: `Protocole actuel (JSON) :\n${JSON.stringify(toContent(cur))}\n\nDemande d'adaptation :\n${instruction}`,
+      `\nYou ADAPT an existing protocol. Keep everything not affected by the request. If the request changes the number of reactions/samples, update the parameters[key=n_reactions].default parameter — but do not compute any scaled volume.`,
+    prompt: `Current protocol (JSON):\n${JSON.stringify(toContent(cur))}\n\nAdaptation request:\n${instruction}`,
     schema: ProtocolDraftSchema,
   });
   return updateProtocol(db, id, draft);
@@ -165,14 +208,15 @@ export async function adaptProtocol(db: Db, id: Id, instruction: string): Promis
 // on EXTRAIT/normalise le protocole décrit dans un document fourni (texte brut,
 // possiblement bruité par un OCR). Même schéma, même modèle — system-prompt
 // orienté fidélité au document plutôt que génération libre.
-const DOC_SYSTEM = `Tu es un assistant de laboratoire précis et sourcé.
-Tu EXTRAIS un protocole de biologie depuis un DOCUMENT fourni (texte brut, éventuellement issu d'un OCR imparfait) et tu le normalises en un protocole structuré et RÉALISTE.
-Règles absolues :
-- Fidélité au document : n'invente pas d'étapes ni de valeurs absentes. Corrige seulement le bruit d'OCR évident.
-- La recette (master mix) est donnée PAR RÉACTION uniquement. Ne calcule JAMAIS de volume mis à l'échelle : le scaling est fait par du code déterministe, pas par toi.
-- Marque critical:true les étapes où une déviation compromet le résultat.
-- sources[] : cite le document source (kind:"sop") et toute référence qu'il contient (DOI/URL).
-- Sois concret et concis, ton de chercheur senior. Réponds en français.`;
+const DOC_SYSTEM = `You are a precise, well-sourced laboratory assistant.
+You EXTRACT a biology protocol from a provided DOCUMENT (raw text, possibly from imperfect OCR) and normalize it into a structured, REALISTIC protocol.
+Absolute rules:
+- Faithfulness to the document: do not invent steps or values that are absent. Only fix obvious OCR noise.
+- The recipe (master mix) is given PER REACTION only. NEVER compute a scaled volume: scaling is done by deterministic code, not by you.
+- Mark critical:true the steps where a deviation compromises the result.
+- sources[]: cite the source document (kind:"sop") and any reference it contains (DOI/URL).
+- Do NOT create a final "results"/"outcome" step and do NOT set isResult: a dedicated "Results" step is appended automatically by the system.
+- Be concrete and concise, in the tone of a senior researcher. Respond in English.`;
 
 export async function generateProtocolFromDocument(
   db: Db,
@@ -182,11 +226,11 @@ export async function generateProtocolFromDocument(
 ): Promise<Protocol> {
   assertEnabled("protocolStudio");
   const guidance = instructions?.trim()
-    ? `Consignes de l'utilisateur (prioritaires sur la forme du document) :\n${instructions.trim()}\n\n`
+    ? `User instructions (take priority over the document's form):\n${instructions.trim()}\n\n`
     : "";
   const draft = await generateObjectFor("protocol", {
     system: DOC_SYSTEM,
-    prompt: `${guidance}Voici le(s) document(s) décrivant le protocole. Extrais-le et normalise-le :\n\n${documentText}`,
+    prompt: `${guidance}Here is the document(s) describing the protocol. Extract and normalize it:\n\n${documentText}`,
     schema: ProtocolDraftSchema,
   });
   return createProtocol(db, ws, draft);

@@ -85,12 +85,49 @@ describe("Protocol Studio", () => {
 });
 
 describe("draft_doc : seme, figeage, immutabilité", () => {
-  it("createProtocol seme draft_doc reflétant les étapes", async () => {
+  it("createProtocol seme draft_doc reflétant les étapes (+ étape Results)", async () => {
     const db = createDb();
     const p = await createProtocol(db, "ws1", RT_QPCR_REFERENCE);
     const page = await db.getPage(p.id);
     expect(page?.draftDoc).toBeTruthy();
-    expect(docToSteps(page!.draftDoc)).toHaveLength(RT_QPCR_REFERENCE.steps.length);
+    // createProtocol ajoute une étape « Results » finale par défaut.
+    expect(docToSteps(page!.draftDoc)).toHaveLength(RT_QPCR_REFERENCE.steps.length + 1);
+    db.close();
+  });
+
+  it("createProtocol ajoute exactement une étape Results, en dernier", async () => {
+    const db = createDb();
+    const p = await createProtocol(db, "ws1", RT_QPCR_REFERENCE);
+    const results = p.steps.filter((s) => s.isResult);
+    expect(results).toHaveLength(1);
+    const last = p.steps[p.steps.length - 1];
+    expect(last.isResult).toBe(true);
+    expect(last.title).toBe("Results");
+    expect(last.index).toBe(p.steps.length - 1);
+    db.close();
+  });
+
+  it("createProtocol n'ajoute pas de doublon si le draft contient déjà une étape Results", async () => {
+    const db = createDb();
+    const draft = {
+      ...RT_QPCR_REFERENCE,
+      steps: [
+        ...RT_QPCR_REFERENCE.steps,
+        { index: RT_QPCR_REFERENCE.steps.length, title: "Mon résultat", instruction: "…", isResult: true },
+      ],
+    };
+    const p = await createProtocol(db, "ws1", draft);
+    expect(p.steps.filter((s) => s.isResult)).toHaveLength(1);
+    expect(p.steps[p.steps.length - 1].isResult).toBe(true);
+    db.close();
+  });
+
+  it("sealDraft conserve le flag isResult sur la version figée", async () => {
+    const db = createDb();
+    const p = await createProtocol(db, "ws1", RT_QPCR_REFERENCE);
+    const { version } = await sealDraft(db, p.id);
+    const frozen = await getProtocol(db, p.id, version);
+    expect(frozen!.steps[frozen!.steps.length - 1].isResult).toBe(true);
     db.close();
   });
 

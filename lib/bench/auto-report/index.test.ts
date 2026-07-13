@@ -3,8 +3,19 @@ import { configureLlm, type Db } from "@/lib/core";
 import { createDb } from "@/lib/core/sqlite";
 import { seedReferenceProtocol } from "../protocol-studio";
 import { startRun, advanceStep, completeRun } from "../live-bench";
-import { captureNote, captureMeasurement, captureDeviation } from "../evidence-capture";
+import {
+  captureNote,
+  captureMeasurement,
+  captureDeviation,
+  capturePhoto,
+  capturePhotoRef,
+} from "../evidence-capture";
 import { generateReport, getReport, exportReportMarkdown } from "./index";
+
+/** Extrait le HTML d'une section `<h2>Titre</h2> … <h2>…` du document. */
+function section(html: string, title: string): string {
+  return html.split(`<h2>${title}</h2>`)[1]?.split("<h2>")[0] ?? "";
+}
 
 beforeAll(() => {
   process.env.FEATURE_PROTOCOL_STUDIO = "true";
@@ -100,6 +111,71 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const md = await exportReportMarkdown(d, runId); // pas de generateReport préalable
     expect(md.length).toBeGreaterThan(0);
     expect(md).toContain("# Report");
+    d.close();
+  });
+});
+
+describe("Auto Report — section Result (images inline)", () => {
+  async function startRunAtResult(d: Db) {
+    const proto = await seedReferenceProtocol(d, "lab1");
+    const ctx = await startRun(d, "lab1", {
+      operator: "u1",
+      protocolId: proto.id,
+      params: { n_reactions: 24 },
+    });
+    const resultStep = ctx.steps.find((s) => /results/i.test(s.title))!;
+    expect(resultStep).toBeTruthy();
+    return { ctx, resultStep };
+  }
+
+  it("rend une photo (brique capturePhoto → fileId) en image inline dans la section Result", async () => {
+    const d = createDb(":memory:");
+    const { ctx, resultStep } = await startRunAtResult(d);
+    await capturePhoto(
+      d,
+      "lab1",
+      ctx.run.id,
+      resultStep.id,
+      { bytes: Buffer.from("fakepng"), mime: "image/png", sha256: "abc123def456" },
+      "u1",
+      "Gel final"
+    );
+    await completeRun(d, ctx.run.id);
+    const report = await generateReport(d, ctx.run.id);
+
+    const resultSection = section(report.html, "Result");
+    expect(resultSection).toContain('<img src="/api/files/');
+    expect(resultSection).toContain('alt="Gel final"');
+    // Pas de double-comptage : la photo n'est pas re-listée en texte dans Observed.
+    expect(section(report.html, "Observed")).not.toContain("Gel final");
+    // Trace textuelle conservée dans l'export/MCP.
+    expect(await exportReportMarkdown(d, ctx.run.id)).toContain("[Photo: Gel final]");
+    d.close();
+  });
+
+  it("rend une photo capturée par référence (console de run → source.ref) via /api/files", async () => {
+    const d = createDb(":memory:");
+    const { ctx, resultStep } = await startRunAtResult(d);
+    await capturePhotoRef(
+      d,
+      ctx.run.id,
+      resultStep.id,
+      { storageKey: "fichier_42", label: "scope.png" },
+      "u1"
+    );
+    await completeRun(d, ctx.run.id);
+    const report = await generateReport(d, ctx.run.id);
+    expect(section(report.html, "Result")).toContain('src="/api/files/fichier_42"');
+    d.close();
+  });
+
+  it("affiche un placeholder quand l'étape Results est vide", async () => {
+    const d = createDb(":memory:");
+    const { ctx } = await startRunAtResult(d);
+    await completeRun(d, ctx.run.id);
+    const report = await generateReport(d, ctx.run.id);
+    expect(report.html).toContain("<h2>Result</h2>");
+    expect(section(report.html, "Result")).toMatch(/No result recorded yet/i);
     d.close();
   });
 });

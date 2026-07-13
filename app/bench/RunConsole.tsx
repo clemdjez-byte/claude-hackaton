@@ -119,6 +119,15 @@ export default function RunConsole({
     steps.find((s) => s.status === "active") ?? steps.find((s) => s.status === "pending") ?? null;
   const live = run.status === "active" || run.status === "paused";
 
+  // Étape « Results » (rappel doux avant clôture) : si le protocole en a une et
+  // qu'aucune preuve n'y est encore attachée, on demande confirmation avant de
+  // terminer (gate souple — jamais bloquant). Se recalcule à chaque preuve ajoutée.
+  const resultProto = protocol.steps.find((s) => s.isResult) ?? null;
+  const resultRunStep = resultProto
+    ? steps.find((s) => s.protocolStepIndex === resultProto.index) ?? null
+    : null;
+  const resultMissing = !!resultRunStep && !evidence.some((e) => e.stepId === resultRunStep.id);
+
   // File d'attente : les envois serveur se chaînent (jamais en parallèle) pour
   // qu'un double-clic rapide ne fasse pas lire deux fois la même étape active.
   const stepQueue = useRef<Promise<void>>(Promise.resolve());
@@ -156,6 +165,8 @@ export default function RunConsole({
   const [manualIndex, setManualIndex] = useState<number | null>(null);
   // Observation dont on demande confirmation de suppression (inline).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Rappel « Terminer sans résultat ? » (étape Results vide) avant clôture.
+  const [confirmNoResult, setConfirmNoResult] = useState(false);
   // Hauteur (px) du copilote vocal au centre : réglable en glissant sa poignée
   // (vers le haut = plus grand pour lire le transcript, vers le bas = plus petit).
   const [voiceH, setVoiceH] = useState(200);
@@ -198,6 +209,12 @@ export default function RunConsole({
 
   function confirmFinish() {
     if (finishing) return;
+    // Résultat manquant : premier clic → on demande confirmation, on ne clôture pas.
+    if (resultMissing && !confirmNoResult) {
+      setConfirmNoResult(true);
+      return;
+    }
+    setConfirmNoResult(false);
     setFinishing(true);
     start(async () => {
       try {
@@ -367,16 +384,36 @@ export default function RunConsole({
             <span className={`pill ${run.status === "completed" ? "accent" : ""}`}>{run.status}</span>
           </div>
         </div>
-        {live && (
-          <button
-            type="button"
-            disabled={pending || finishing}
-            onClick={confirmFinish}
-            className="btn-primary shrink-0 disabled:opacity-60"
-          >
-            {finishing ? "Finishing…" : "Finish & report →"}
-          </button>
-        )}
+        {live &&
+          (confirmNoResult ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="receipt">Terminer sans résultat ?</span>
+              <button
+                type="button"
+                disabled={pending || finishing}
+                onClick={confirmFinish}
+                className="btn-primary shrink-0 disabled:opacity-60"
+              >
+                {finishing ? "Finishing…" : "Terminer quand même →"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmNoResult(false)}
+                className="chip"
+              >
+                Annuler
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={pending || finishing}
+              onClick={confirmFinish}
+              className="btn-primary shrink-0 disabled:opacity-60"
+            >
+              {finishing ? "Finishing…" : "Finish & report →"}
+            </button>
+          ))}
       </header>
 
       {/* 3 colonnes : largeurs latérales réglables (poignées) sur desktop ; sur

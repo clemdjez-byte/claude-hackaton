@@ -27,6 +27,10 @@ export const ProtocolStepSchema = z.object({
   durationSec: z.number().int().positive().optional().describe("timer suggéré en secondes"),
   temperature: QuantitySchema.optional(),
   critical: z.boolean().optional().describe("true si une déviation à cette étape compromet le résultat"),
+  isResult: z
+    .boolean()
+    .optional()
+    .describe("réservé au système : ne pas renseigner ; une étape finale « Results » est ajoutée automatiquement"),
 });
 
 export const ParamDefSchema = z.object({

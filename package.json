@@ -14,7 +14,8 @@
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "seed-aml": "rm -f octopus.db* && tsx --env-file-if-exists=.env.local scripts/seed-aml.ts",
     "seed-fluo": "tsx --env-file-if-exists=.env.local scripts/seed-fluo.ts",
-    "seed-all": "npm run seed-aml && npm run seed-fluo",
+    "seed-demo": "tsx --env-file-if-exists=.env.local scripts/seed-demo.ts",
+    "seed-all": "npm run seed-aml && npm run seed-fluo && npm run seed-demo",
     "add-pcr": "tsx --env-file-if-exists=.env.local scripts/add-pcr-protocol.ts",
     "voice": "concurrently -k -n livekit,agent -c blue,magenta \"livekit-server --dev\" \"tsx --env-file-if-exists=.env.local voice-agent/agent.ts dev\""
   },
@@ -28,6 +29,7 @@
     "@livekit/agents-plugin-silero": "1.5.1",
     "@livekit/rtc-node": "0.13.31",
     "@tiptap/core": "^3.27.3",
+    "@tiptap/extension-image": "^3.27.3",
     "@tiptap/extension-table": "^3.27.3",
     "@tiptap/extension-task-item": "^3.27.3",
     "@tiptap/extension-task-list": "^3.27.3",
