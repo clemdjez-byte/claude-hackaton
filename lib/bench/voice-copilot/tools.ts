@@ -13,6 +13,11 @@ import {
   listEvidence,
 } from "../evidence-capture";
 import { search } from "@/lib/retrieval";
+import { hitsToAnchors, collectGraphBlock } from "@/lib/retrieval/knowledge-graph/query";
+
+// La réponse de query_memory est LUE à voix haute : on tronque bien plus serré
+// que le chat écrit (1200), pour éviter que l'agent récite des pavés.
+const VOICE_HIT_CHARS = 320;
 
 export interface VoiceToolCtx {
   db: Db;
@@ -216,11 +221,27 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
     }),
 
     query_memory: tool({
-      description: "Rechercher dans la mémoire du labo (runs, protocoles, observations passés).",
+      description:
+        "Demander au labo : cherche dans la mémoire (runs, protocoles, observations passés) ET dans le graphe de connaissances (verdicts, causes d'échec documentées, recoupements entre protocoles). À utiliser pour les questions réflexives : « quelles conséquences si je me trompe ? », « comment se sont passées les manips précédentes ? ».",
       inputSchema: z.object({ query: z.string(), k: z.number().int().min(1).max(10).default(5) }),
       execute: async ({ query, k }) => {
         const hits = await search(ctx.db, ctx.ws, query, k);
-        return { results: hits.map((h) => ({ id: h.sourceId, type: h.sourceType, text: h.text, score: Math.round(h.score * 100) / 100 })) };
+        const results = hits.map((h) => ({
+          id: h.sourceId,
+          type: h.sourceType,
+          text: h.text.slice(0, VOICE_HIT_CHARS),
+        }));
+        // Voie graphe : best-effort. Un flag désactivé (assertEnabled) ou toute
+        // erreur graphe NE DOIT PAS casser le tour vocal : on renvoie alors juste
+        // les passages RAG.
+        let graph = "";
+        try {
+          const anchors = hitsToAnchors(hits);
+          graph = (await collectGraphBlock(ctx.db, ctx.ws, anchors)).graphBlock;
+        } catch (e) {
+          console.warn("[voice] collecte graphe échouée (best-effort) :", e);
+        }
+        return graph ? { results, graph } : { results };
       },
     }),
   };

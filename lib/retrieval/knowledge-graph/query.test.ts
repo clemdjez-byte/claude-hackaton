@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createDb } from "@/lib/core";
 import { link } from "./index";
 import { NODE, REL } from "./ontology";
-import { collectGraphFacts, renderGraphFacts, collectGenericFacts, renderGenericFacts, loadLabels } from "./query";
+import { collectGraphFacts, renderGraphFacts, collectGenericFacts, renderGenericFacts, loadLabels, collectGraphBlock, hitsToAnchors } from "./query";
 import type { Db } from "@/lib/core";
 
 beforeEach(() => { process.env.FEATURE_KNOWLEDGE_GRAPH = "true"; });
@@ -122,6 +122,49 @@ describe("voie générique (ontologie ouverte)", () => {
     await link(db, "demo", NODE.run("r1"), "weak_link", { type: "operator", id: "x" }, { provenance: "extracted", confidence: 0.2 });
     const generic = await collectGenericFacts(db, "demo", [NODE.run("r1")]);
     expect(generic.map((e) => e.relation)).not.toContain("weak_link");
+    db.close();
+  });
+});
+
+describe("hitsToAnchors", () => {
+  it("mappe runs/protocoles en ancres directes, rattache rapport/preuve à leur run, dédup et ignore le reste", () => {
+    const anchors = hitsToAnchors([
+      { sourceType: "run", sourceId: "r1" },
+      { sourceType: "protocol", sourceId: "p1" },
+      { sourceType: "report", sourceId: "rep1", meta: { runId: "r2" } },
+      { sourceType: "evidence", sourceId: "ev1", meta: { runId: "r1" } }, // → run r1 : dédupliqué
+      { sourceType: "report", sourceId: "rep2" }, // pas de meta.runId → ignoré
+      { sourceType: "note", sourceId: "n1" }, // type non ancrable → ignoré
+    ]);
+    expect(anchors).toEqual([
+      { type: "run", id: "r1" },
+      { type: "protocol", id: "p1" },
+      { type: "run", id: "r2" },
+    ]);
+  });
+});
+
+describe("collectGraphBlock", () => {
+  it("fusionne noyau chiffré + triplets ouverts dans graphBlock et expose facts/generic/labels", async () => {
+    const db = createDb(":memory:");
+    await seedGraph(db);
+    await db.upsertKgEntity({ ws: "demo", type: "instrument", key: "confocal_zeiss", label: "Confocal Zeiss", aliases: [] });
+    await link(db, "demo", NODE.run("r1"), "performed_on", { type: "instrument", id: "confocal_zeiss" }, { provenance: "extracted", confidence: 0.8 });
+
+    const { graphBlock, facts, generic, labels } = await collectGraphBlock(db, "demo", [NODE.run("r1")]);
+    expect(facts.runs.map((r) => r.runId)).toContain("r1");
+    expect(graphBlock).toContain("[run:r1]"); // noyau chiffré rendu
+    expect(graphBlock).toContain("performed_on"); // triplet ouvert fusionné dans le même bloc
+    expect(generic.map((e) => e.relation)).toContain("performed_on");
+    expect(labels.get("instrument:confocal_zeiss")).toBe("Confocal Zeiss");
+    db.close();
+  });
+
+  it("renvoie un graphBlock vide quand l'ancre n'a aucun fait (repli des appelants)", async () => {
+    const db = createDb(":memory:");
+    const { graphBlock, facts } = await collectGraphBlock(db, "demo", [NODE.run("absent")]);
+    expect(graphBlock).toBe("");
+    expect(facts.runs).toHaveLength(0);
     db.close();
   });
 });

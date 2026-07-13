@@ -4,8 +4,32 @@
 // FailureModes attribués ; et les facteurs d'échec PARTAGÉS entre protocoles
 // (via les hubs ParameterType). renderGraphFacts en fait un bloc pour le prompt.
 import { assertEnabled, type Db, type FailureMode, type Id, type KgEdge, type ThresholdOperator, type Verdict, type Ws } from "@/lib/core";
-import { REL, type KgNode } from "./ontology";
+import { NODE, REL, type KgNode } from "./ontology";
 import { subgraph } from "./index";
+
+/** Mappe les hits du RAG (mémoire) en nœuds d'ancrage du graphe. Runs et
+ *  protocoles sont des ancres directes ; un hit rapport/preuve est rattaché à
+ *  SON run (via meta.runId), pour élargir les points d'entrée de traversée. Les
+ *  ancres run/protocole suffisent : les nœuds ouverts (instrument, opérateur…)
+ *  y sont reliés par l'indexation (voir resolve.ts), donc atteignables en BFS. */
+export function hitsToAnchors(
+  hits: Array<{ sourceType: string; sourceId: string; meta?: Record<string, unknown> }>
+): KgNode[] {
+  const anchors: KgNode[] = [];
+  const seen = new Set<string>();
+  const add = (node: KgNode) => {
+    const k = `${node.type}:${node.id}`;
+    if (!seen.has(k)) { seen.add(k); anchors.push(node); }
+  };
+  for (const h of hits) {
+    if (h.sourceType === "run") add(NODE.run(h.sourceId));
+    else if (h.sourceType === "protocol") add(NODE.protocol(h.sourceId));
+    else if ((h.sourceType === "report" || h.sourceType === "evidence") && typeof h.meta?.runId === "string") {
+      add(NODE.run(h.meta.runId as string));
+    }
+  }
+  return anchors;
+}
 
 export interface RunFact {
   runId: Id;
@@ -189,4 +213,25 @@ export function renderGenericFacts(edges: KgEdge[], labels: Map<string, string>)
     return label && label.toLowerCase() !== id.toLowerCase() ? `[${type}:${id}] "${label}"` : `[${type}:${id}]`;
   };
   return edges.map((e) => `${tag(e.fromType, e.fromId)} —${e.relation}→ ${tag(e.toType, e.toId)}`).join("\n");
+}
+
+/** Voie graphe complète depuis des ancres : collecte le noyau chiffré + les
+ *  triplets ouverts et rend le bloc texte du prompt. Renvoie aussi facts/generic/
+ *  labels pour les consommateurs qui dessinent le sous-graphe (chat UI).
+ *  `graphBlock` vaut "" si aucun fait — au caller de choisir son texte de repli.
+ *  Peut lever (assertEnabled dans les collecteurs) : à envelopper d'un try/catch
+ *  best-effort par chaque appelant. */
+export async function collectGraphBlock(
+  db: Db,
+  ws: Ws,
+  anchors: KgNode[]
+): Promise<{ graphBlock: string; facts: GraphFacts; generic: KgEdge[]; labels: Map<string, string> }> {
+  const facts = await collectGraphFacts(db, ws, anchors);
+  const generic = await collectGenericFacts(db, ws, anchors);
+  const labels = await loadLabels(db, ws);
+  const parts: string[] = [];
+  if (facts.runs.length) parts.push(renderGraphFacts(facts));
+  const genericStr = renderGenericFacts(generic, labels);
+  if (genericStr) parts.push(genericStr);
+  return { graphBlock: parts.join("\n"), facts, generic, labels };
 }
