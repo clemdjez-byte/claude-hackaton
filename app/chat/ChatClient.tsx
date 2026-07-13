@@ -40,6 +40,10 @@ export default function ChatClient() {
   const [collapsed, setCollapsed] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [consolidateMsg, setConsolidateMsg] = useState<string | null>(null);
+  // Menu Tools : outil épinglé manuellement pour le PROCHAIN message (sinon
+  // l'agent choisit seul). Consommé à l'envoi.
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = active?.messages ?? [];
@@ -52,11 +56,11 @@ export default function ChatClient() {
   }, [setFocus]);
 
   // …et remise à zéro quand on bascule de conversation active (la prochaine
-  // réponse la rallumera). On efface aussi l'erreur : elle appartenait à la
-  // conversation qu'on vient de quitter, pas à celle qu'on affiche.
+  // réponse la rallumera depuis ses propres sources / entités). L'effacement de
+  // l'erreur, lui, se fait dans les handlers de la sidebar (action utilisateur),
+  // pas ici : un setState synchrone dans un effet cascade les rendus.
   useEffect(() => {
     setFocus([], []);
-    setError(null);
   }, [activeId, setFocus]);
 
   // Dédoublonnage du knowledge graph à la demande : fusionne les concepts en
@@ -87,6 +91,8 @@ export default function ChatClient() {
   async function send(text: string) {
     const question = text.trim();
     if (!question || busy) return;
+    const forcedTool = selectedTool; // épinglé via le menu Tools ; consommé maintenant
+    setSelectedTool(null);
     setError(null);
     setInput("");
 
@@ -112,7 +118,10 @@ export default function ChatClient() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history.map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({
+          messages: history.map(({ role, content }) => ({ role, content })),
+          forcedTool: forcedTool ?? undefined,
+        }),
       });
       if (!res.ok || !res.body) throw new Error(`status ${res.status}`);
 
@@ -229,9 +238,9 @@ export default function ChatClient() {
       <ConversationSidebar
         conversations={conversations}
         activeId={activeId}
-        onSelect={select}
-        onCreate={create}
-        onRemove={remove}
+        onSelect={(id) => { setError(null); select(id); }}
+        onCreate={() => { setError(null); create(); }}
+        onRemove={(id) => { setError(null); remove(id); }}
         collapsed={collapsed}
         onToggle={() => setCollapsed((v) => !v)}
       />
@@ -292,13 +301,47 @@ export default function ChatClient() {
           <div className="card mt-4 shrink-0 border-danger/40 bg-danger/5 p-3 text-sm text-danger">{error}</div>
         )}
 
+        {selectedTool && (
+          <div className="mt-2 flex shrink-0 items-center gap-2">
+            <span className="pill accent inline-flex items-center gap-1.5">
+              🔧 {TOOL_LABELS[selectedTool] ?? selectedTool}
+              <button
+                type="button"
+                onClick={() => setSelectedTool(null)}
+                className="opacity-70 hover:opacity-100"
+                aria-label="Remove pinned tool"
+              >
+                ✕
+              </button>
+            </span>
+            <span className="text-xs text-muted">forced for the next message</span>
+          </div>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
             send(input);
           }}
-          className="mt-3 flex shrink-0 gap-2"
+          className="mt-3 flex shrink-0 items-center gap-2"
         >
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              className={`chip ${toolsOpen || selectedTool ? "accent" : ""}`}
+              onClick={() => setToolsOpen((v) => !v)}
+              title="Force a specific tool for the next message"
+            >
+              Tools
+            </button>
+            {toolsOpen && (
+              <ToolsMenu
+                selected={selectedTool}
+                onPick={setSelectedTool}
+                onClose={() => setToolsOpen(false)}
+              />
+            )}
+          </div>
           <input
             className="input-field flex-1 px-4 py-2.5 text-sm"
             placeholder="Ask about a protocol, a run, a deviation…"
