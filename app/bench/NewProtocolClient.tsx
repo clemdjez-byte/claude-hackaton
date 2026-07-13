@@ -166,7 +166,7 @@ export default function NewProtocolClient() {
         {/* Contexte (avec fichiers) OU description simple (sans fichier) */}
         <div className="space-y-2">
           <label className="eyebrow" htmlFor="brief">
-            {files.length > 0 ? "Add context (optional)" : "Or describe it"}
+            {files.length > 0 ? "Add context (optional)" : "Add guidelines"}
           </label>
           <textarea
             id="brief"
