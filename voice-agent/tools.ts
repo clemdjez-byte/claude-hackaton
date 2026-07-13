@@ -11,6 +11,7 @@ export type ClientEvent =
   | { type: "capture_photo" }
   | { type: "close_camera" }
   | { type: "timer"; label: string; seconds: number }
+  | { type: "timer_control"; action: "pause" | "resume" | "stop" | "clear"; label?: string }
   | { type: "did_act" };
 
 export type ToolDeps = {
@@ -38,6 +39,13 @@ export function buildExecute(name: string, aiTool: AiToolLike, deps: ToolDeps) {
       const seconds = Math.max(1, Math.round(Number(args.seconds ?? 0)));
       await deps.sendClientEvent({ type: "timer", label, seconds });
       return `Timer « ${label} » lancé (${seconds}s), visible à l'écran.`;
+    }
+    if (name === "control_timer") {
+      const action = String(args.action ?? "") as "pause" | "resume" | "stop" | "clear";
+      const label = args.label != null ? String(args.label) : undefined;
+      await deps.sendClientEvent({ type: "timer_control", action, label });
+      const verb = { pause: "mis en pause", resume: "relancé", stop: "arrêté", clear: "effacé" }[action] ?? "mis à jour";
+      return `Minuteur ${label ? `« ${label} » ` : ""}${verb}.`;
     }
     if (name === "capture_photo") {
       await deps.sendClientEvent({ type: "capture_photo" });

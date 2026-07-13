@@ -256,6 +256,19 @@ export default function RunConsole({
     ]);
   }
 
+  // Contrôle vocal d'un minuteur déjà affiché. Sans label → toutes les cartes.
+  // pause / stop figent le décompte (running=false), resume le relance, clear
+  // retire la carte de l'écran.
+  function controlTimers(action: "pause" | "resume" | "stop" | "clear", label?: string) {
+    const match = (t: ActiveTimer) =>
+      !label || t.label.toLowerCase().includes(label.toLowerCase());
+    setTimers((ts) =>
+      action === "clear"
+        ? ts.filter((t) => !match(t))
+        : ts.map((t) => (match(t) ? { ...t, running: action === "resume" } : t))
+    );
+  }
+
   // Les ordres de l'agent (mêmes effets que l'ancien flux NDJSON).
   const voiceRoom = useVoiceRoom({
     runId: run.id,
@@ -263,6 +276,9 @@ export default function RunConsole({
       switch (ev.type) {
         case "timer":
           addTimer(ev.label, ev.seconds);
+          break;
+        case "timer_control":
+          controlTimers(ev.action, ev.label);
           break;
         case "capture_photo":
           setMode("photo");

@@ -40,6 +40,16 @@ describe("buildExecute — outils client (relayés au navigateur)", () => {
       expect(d.sendClientEvent).toHaveBeenCalledWith({ type: name });
     }
   });
+
+  it("control_timer relaie un event timer_control (action + label) sans exécuter l'outil serveur", async () => {
+    const d = deps();
+    const ai = fakeAiTool();
+    const out = await buildExecute("control_timer", ai, d)({ action: "pause", label: "hybridation" });
+    expect(d.sendClientEvent).toHaveBeenCalledWith({ type: "timer_control", action: "pause", label: "hybridation" });
+    expect(ai.execute).not.toHaveBeenCalled();
+    expect(d.onMutation).not.toHaveBeenCalled();
+    expect(typeof out).toBe("string");
+  });
 });
 
 describe("buildExecute — outils serveur", () => {
@@ -67,18 +77,18 @@ describe("buildExecute — outils serveur", () => {
 });
 
 describe("buildAgentTools — intégration avec les vrais outils du cœur", () => {
-  it("mappe les 13 outils du copilote sur un run réel", async () => {
+  it("mappe les 14 outils du copilote sur un run réel", async () => {
     const db = createDb(":memory:");
     const proto = await seedReferenceProtocol(db, "demo");
     const ctx = await startRun(db, "demo", { operator: "op", protocolId: proto.id });
     const aiTools = buildVoiceTools({ db, ws: "demo", runId: ctx.run.id, operator: "op" });
     expect(Object.keys(aiTools).sort()).toEqual([
-      "add_note", "capture_photo", "close_camera", "delete_evidence", "flag_deviation",
+      "add_note", "capture_photo", "close_camera", "control_timer", "delete_evidence", "flag_deviation",
       "list_evidence", "next_step", "query_memory", "read_step", "record_measurement",
       "skip_step", "start_timer", "step_back",
     ]);
     const mapped = buildAgentTools({ db, ws: "demo", runId: ctx.run.id, operator: "op" }, deps());
-    expect(mapped).toHaveLength(13);
+    expect(mapped).toHaveLength(14);
     db.close();
   });
 });

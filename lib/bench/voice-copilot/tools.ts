@@ -170,6 +170,23 @@ export function buildVoiceTools(ctx: VoiceToolCtx) {
       execute: async ({ label, seconds }) => ({ started: true, label, seconds }),
     }),
 
+    control_timer: tool({
+      description:
+        "Contrôler un minuteur DÉJÀ affiché à l'écran : le mettre en pause (« pause »), le relancer / reprendre (« resume »), l'arrêter (« stop »), ou l'effacer de l'écran (« clear »). Le contrôle se fait dans le navigateur. Sans label, l'action vise TOUS les minuteurs affichés.",
+      inputSchema: z.object({
+        action: z
+          .enum(["pause", "resume", "stop", "clear"])
+          .describe("pause = figer le décompte ; resume = le relancer ; stop = l'arrêter ; clear = l'effacer de l'écran"),
+        label: z
+          .string()
+          .optional()
+          .describe("nom du minuteur visé (optionnel) ; absent = tous les minuteurs affichés"),
+      }),
+      // execute côté serveur = no-op ; l'action réelle est jouée par le client
+      // (voir buildExecute → timer_control, comme start_timer).
+      execute: async ({ action, label }) => ({ controlled: true, action, label }),
+    }),
+
     add_note: tool({
       description: "Enregistrer une note d'observation attachée à l'étape en cours.",
       inputSchema: z.object({ text: z.string().min(1) }),

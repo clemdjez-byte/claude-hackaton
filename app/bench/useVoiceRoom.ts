@@ -20,6 +20,7 @@ export type ClientEvent =
   | { type: "capture_photo" }
   | { type: "close_camera" }
   | { type: "timer"; label: string; seconds: number }
+  | { type: "timer_control"; action: "pause" | "resume" | "stop" | "clear"; label?: string }
   | { type: "did_act" };
 
 export type VoiceRoomStatus =
