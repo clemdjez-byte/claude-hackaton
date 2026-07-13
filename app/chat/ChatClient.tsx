@@ -1,24 +1,19 @@
 "use client";
-// Chat "Ask your lab" — composant volontairement minimal : pas de useChat,
-// pas de persistance de fil, un lecteur NDJSON maison (même découpe que
-// RunConsole côté voix). L'historique vit en mémoire côté client et voyage
-// dans chaque requête (YAGNI démo).
-import { useRef, useState } from "react";
-import { useWindowsContext } from "@/app/shell/WindowsContext";
-import type { WindowKind } from "@/app/shell/useWindows";
+// Chat "Ask your lab" — sidebar d'historique (conversations persistées en
+// localStorage) + une conversation active. Copilote agentique : l'IA appelle
+// des outils (ToolSteps), la galaxie s'illumine sur les entités mobilisées
+// (useGalaxyControl) et un mini-graphe résume le sous-graphe (GraphMini). Le
+// rendu des réponses — markdown propre + citations numérotées — est délégué à
+// AnswerBody. Lecteur NDJSON maison (même découpe que la voix). Le streaming
+// vise la conversation capturée au départ, même si l'utilisateur en change.
+import { useEffect, useRef, useState } from "react";
+import { useGalaxyControl, type FocusSource } from "@/app/shell/GalaxyControlContext";
 import { ToolSteps, type ToolStep } from "./ToolSteps";
 import { GraphMini, type GraphData, type Triple, type CrossProtocol } from "./GraphMini";
-import { useGalaxyControl, type FocusSource } from "@/app/shell/GalaxyControlContext";
-
-type Role = "user" | "assistant";
-type SourceHit = { sourceType: string; sourceId: string; score: number; meta?: Record<string, unknown> };
-type ChatMessage = {
-  role: Role;
-  content: string;
-  sources?: SourceHit[];
-  steps?: ToolStep[];
-  graph?: GraphData;
-};
+import { useConversations } from "./useConversations";
+import ConversationSidebar from "./ConversationSidebar";
+import AnswerBody from "./AnswerBody";
+import type { ChatMessage, SourceHit } from "./types";
 
 const SUGGESTIONS = [
   // Ciblées mais riches : chacune mobilise le graphe et/ou la lecture d'un rapport,
@@ -28,60 +23,41 @@ const SUGGESTIONS = [
   "Based on the documented failures, what should I check before my next dose-response run?",
 ];
 
-/** Fenêtre à ouvrir pour ce type de source, si l'id nécessaire est connu. */
-function sourceWindow(hit: SourceHit): { kind: WindowKind; params: Record<string, string> } | null {
-  const runId = typeof hit.meta?.runId === "string" ? hit.meta.runId : null;
-  switch (hit.sourceType) {
-    case "protocol":
-      return { kind: "protocol", params: { protocolId: hit.sourceId } };
-    case "run":
-      return { kind: "run", params: { runId: hit.sourceId } };
-    case "report":
-      return runId ? { kind: "report", params: { runId } } : null;
-    case "evidence":
-      return runId ? { kind: "run", params: { runId } } : null;
-    default:
-      return null;
-  }
-}
-
-function SourceChip({ hit }: { hit: SourceHit }) {
-  const { open } = useWindowsContext();
-  const target = sourceWindow(hit);
-  const label = `${hit.sourceType}:${hit.sourceId.slice(0, 8)}`;
-  const title = `score ${hit.score.toFixed(2)}`;
-  if (!target) {
-    return (
-      <span className="pill opacity-60" title={`${title} — no page for this source`}>
-        {label}
-      </span>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => open(target.kind, target.params)}
-      className="pill accent"
-      title={title}
-    >
-      {label}
-    </button>
-  );
+function dropEmptyAssistantTail(list: ChatMessage[]): ChatMessage[] {
+  const last = list[list.length - 1];
+  if (last && last.role === "assistant" && !last.content) return list.slice(0, -1);
+  return list;
 }
 
 export default function ChatClient() {
   const { setFocus, setMode } = useGalaxyControl();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { conversations, activeId, active, create, select, remove, updateMessages } = useConversations();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [consolidateMsg, setConsolidateMsg] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const messages = active?.messages ?? [];
+
+  // La galaxie suit la conversation : éteinte à l'ouverture et à la fermeture du
+  // chat, pour ne pas laisser traîner le focus d'une conversation précédente.
+  useEffect(() => {
+    setFocus([], []);
+    return () => setFocus([], []);
+  }, [setFocus]);
+
+  // …et remise à zéro quand on bascule de conversation active (la prochaine
+  // réponse la rallumera depuis ses propres sources / entités).
+  useEffect(() => {
+    setFocus([], []);
+  }, [activeId, setFocus]);
+
   // Dédoublonnage du knowledge graph à la demande : fusionne les concepts en
-  // double (« dose de quizartinib » ⟷ « quizartinib concentration ») pour que
-  // les questions transverses relient bien les protocoles. Sûr à relancer.
+  // double pour que les questions transverses relient bien les protocoles. Sûr
+  // à relancer.
   async function consolidate() {
     if (consolidating) return;
     setConsolidating(true);
@@ -104,19 +80,22 @@ export default function ChatClient() {
     }
   }
 
-  function dropEmptyAssistantTail(list: ChatMessage[]): ChatMessage[] {
-    const last = list[list.length - 1];
-    if (last && last.role === "assistant" && !last.content) return list.slice(0, -1);
-    return list;
-  }
-
   async function send(text: string) {
     const question = text.trim();
     if (!question || busy) return;
     setError(null);
     setInput("");
-    const history: ChatMessage[] = [...messages, { role: "user", content: question }];
-    setMessages([...history, { role: "assistant", content: "", sources: [], steps: [] }]);
+
+    // Cible : conversation active, ou nouvelle si aucune. On garde l'id sous la
+    // main pour que le streaming vise CETTE conversation même si l'utilisateur
+    // en sélectionne une autre entre-temps.
+    let convId = activeId;
+    let base: ChatMessage[] = [];
+    if (!convId) convId = create();
+    else base = conversations.find((c) => c.id === convId)?.messages ?? [];
+
+    const history: ChatMessage[] = [...base, { role: "user", content: question }];
+    updateMessages(convId, () => [...history, { role: "assistant", content: "", sources: [], steps: [] }]);
     setBusy(true);
 
     // Focus de la galaxie accumulé sur toute la réponse : les documents cités
@@ -149,11 +128,11 @@ export default function ChatClient() {
           try {
             ev = JSON.parse(raw);
           } catch {
-            continue; // ligne coupée entre deux reads : on l'a déjà bufferisée, on ignore un parse raté isolé
+            continue; // ligne coupée entre deux reads : on l'a déjà bufferisée
           }
           if (ev.type === "sources") {
             const hits = Array.isArray(ev.hits) ? (ev.hits as SourceHit[]) : [];
-            setMessages((ms) => {
+            updateMessages(convId, (ms) => {
               const next = [...ms];
               const i = next.length - 1;
               next[i] = { ...next[i], sources: hits };
@@ -176,7 +155,7 @@ export default function ChatClient() {
               triples: Array.isArray(ev.triples) ? (ev.triples as Triple[]) : [],
               labels: (ev.labels ?? {}) as Record<string, string>,
             };
-            setMessages((ms) => {
+            updateMessages(convId, (ms) => {
               const next = [...ms];
               const i = next.length - 1;
               next[i] = { ...next[i], graph };
@@ -195,7 +174,7 @@ export default function ChatClient() {
             if (graph.crossProtocol.length > 0) setMode("ragkg");
           } else if (ev.type === "tool_call") {
             const step: ToolStep = { name: String(ev.name ?? "tool"), args: ev.args as Record<string, unknown> };
-            setMessages((ms) => {
+            updateMessages(convId, (ms) => {
               const next = [...ms];
               const i = next.length - 1;
               next[i] = { ...next[i], steps: [...(next[i].steps ?? []), step] };
@@ -204,7 +183,7 @@ export default function ChatClient() {
           } else if (ev.type === "tool_result") {
             const name = String(ev.name ?? "tool");
             const data = (ev.data ?? {}) as Record<string, unknown>;
-            setMessages((ms) => {
+            updateMessages(convId, (ms) => {
               const next = [...ms];
               const i = next.length - 1;
               const steps = [...(next[i].steps ?? [])];
@@ -220,7 +199,7 @@ export default function ChatClient() {
             });
           } else if (ev.type === "text_chunk") {
             const delta = String(ev.delta ?? "");
-            setMessages((ms) => {
+            updateMessages(convId, (ms) => {
               const next = [...ms];
               const i = next.length - 1;
               next[i] = { ...next[i], content: next[i].content + delta };
@@ -228,13 +207,13 @@ export default function ChatClient() {
             });
           } else if (ev.type === "error") {
             setError(String(ev.message ?? "Chat error."));
-            setMessages((ms) => dropEmptyAssistantTail(ms));
+            updateMessages(convId, dropEmptyAssistantTail);
           }
         }
       }
     } catch {
       setError("Connection to the lab copilot failed. Check the server and try again.");
-      setMessages((ms) => dropEmptyAssistantTail(ms));
+      updateMessages(convId, dropEmptyAssistantTail);
     } finally {
       setBusy(false);
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -242,81 +221,92 @@ export default function ChatClient() {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col px-4 py-4 sm:px-5">
-      <header className="fade-in mb-3 flex shrink-0 items-start justify-between gap-3">
-        <p className="text-xs text-muted">
-          Answers are grounded in your protocols, runs, evidence, and reports — with sources.
-        </p>
-        <button
-          type="button"
-          className="chip shrink-0"
-          onClick={consolidate}
-          disabled={consolidating}
-          title="Merge duplicate concepts in the knowledge graph so cross-protocol questions link up"
-        >
-          {consolidating ? "Consolidating…" : "Consolidate graph"}
-        </button>
-      </header>
-      {consolidateMsg && <p className="mb-2 shrink-0 text-xs text-muted">{consolidateMsg}</p>}
+    <div className="flex h-full min-h-0 w-full">
+      <ConversationSidebar
+        conversations={conversations}
+        activeId={activeId}
+        onSelect={select}
+        onCreate={create}
+        onRemove={remove}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((v) => !v)}
+      />
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
-        {messages.length === 0 && (
-          <div className="flex flex-wrap gap-2 fade-up">
-            {SUGGESTIONS.map((q) => (
-              <button key={q} type="button" className="chip" onClick={() => send(q)}>
-                {q}
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5">
+        <header className="fade-in mb-3 flex shrink-0 items-start justify-between gap-3">
+          <p className="text-xs text-muted">
+            Answers are grounded in your protocols, runs, evidence, and reports — with sources.
+          </p>
+          <button
+            type="button"
+            className="chip shrink-0"
+            onClick={consolidate}
+            disabled={consolidating}
+            title="Merge duplicate concepts in the knowledge graph so cross-protocol questions link up"
+          >
+            {consolidating ? "Consolidating…" : "Consolidate graph"}
+          </button>
+        </header>
+        {consolidateMsg && <p className="mb-2 shrink-0 text-xs text-muted">{consolidateMsg}</p>}
 
-        {messages.map((m, i) => (
-          <div key={i} className={`flex fade-up ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                m.role === "user" ? "bg-accent text-white" : "card"
-              }`}
-            >
-              {m.role === "assistant" && !!m.steps?.length && <ToolSteps steps={m.steps} />}
-              <span className="whitespace-pre-wrap">
-                {m.content || (busy && i === messages.length - 1 ? "…" : "")}
-              </span>
-              {m.role === "assistant" && !!m.sources?.length && (
-                <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-2.5">
-                  {m.sources.map((h, j) => (
-                    <SourceChip key={`${h.sourceType}:${h.sourceId}:${j}`} hit={h} />
-                  ))}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+          {messages.length === 0 && (
+            <div className="flex flex-wrap gap-2 fade-up">
+              {SUGGESTIONS.map((q) => (
+                <button key={q} type="button" className="chip" onClick={() => send(q)}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {messages.map((m, i) => (
+            <div key={i} className={`flex fade-up ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              {m.role === "user" ? (
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent px-4 py-3 text-sm text-white">
+                  {m.content}
+                </div>
+              ) : (
+                <div className="card max-w-[85%] rounded-2xl px-4 py-3 text-sm">
+                  {!!m.steps?.length && <ToolSteps steps={m.steps} />}
+                  {m.content ? (
+                    <AnswerBody content={m.content} sources={m.sources} />
+                  ) : busy && i === messages.length - 1 ? (
+                    "…"
+                  ) : (
+                    ""
+                  )}
+                  {m.graph && <GraphMini data={m.graph} />}
                 </div>
               )}
-              {m.role === "assistant" && m.graph && <GraphMini data={m.graph} />}
             </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {error && (
+          <div className="card mt-4 shrink-0 border-danger/40 bg-danger/5 p-3 text-sm text-danger">{error}</div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            send(input);
+          }}
+          className="mt-3 flex shrink-0 gap-2"
+        >
+          <input
+            className="input-field flex-1 px-4 py-2.5 text-sm"
+            placeholder="Ask about a protocol, a run, a deviation…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={busy}
+          />
+          <button type="submit" className="btn-accent shrink-0" disabled={busy || !input.trim()}>
+            Send
+          </button>
+        </form>
       </div>
-
-      {error && (
-        <div className="card mt-4 shrink-0 border-danger/40 bg-danger/5 p-3 text-sm text-danger">{error}</div>
-      )}
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-        className="mt-3 flex shrink-0 gap-2"
-      >
-        <input
-          className="input-field flex-1 px-4 py-2.5 text-sm"
-          placeholder="Ask about a protocol, a run, a deviation…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={busy}
-        />
-        <button type="submit" className="btn-accent shrink-0" disabled={busy || !input.trim()}>
-          Send
-        </button>
-      </form>
     </div>
   );
 }
