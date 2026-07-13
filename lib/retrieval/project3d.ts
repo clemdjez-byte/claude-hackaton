@@ -101,6 +101,20 @@ export function projectTo3D(vectors: number[][]): [number, number, number][] {
     for (let i = 0; i < n; i++) coords[i][k] = V[i][idx] * sqrtL;
   }
 
+  // 4b. Isotropiser : ramener chaque axe au même écart-type → nuage ROND
+  //     (« patate »), ni ellipsoïde étiré le long du 1er axe (forme de comète),
+  //     ni disque plat. La proximité relative des points est conservée.
+  for (let k = 0; k < 3; k++) {
+    let mean = 0;
+    for (const p of coords) mean += p[k];
+    mean /= n;
+    let variance = 0;
+    for (const p of coords) variance += (p[k] - mean) * (p[k] - mean);
+    variance /= n;
+    const sd = Math.sqrt(variance);
+    if (sd > EPS) for (const p of coords) p[k] = (p[k] - mean) / sd;
+  }
+
   // 5. Désambiguïsation de signe (les vecteurs propres sont définis au signe
   //    près) : on oriente chaque axe pour que sa composante de plus grande
   //    amplitude soit positive. Rattaché à un nœud précis → déterministe.
@@ -110,10 +124,18 @@ export function projectTo3D(vectors: number[][]): [number, number, number][] {
     if (coords[pivot][k] < 0) for (let i = 0; i < n; i++) coords[i][k] = -coords[i][k];
   }
 
-  // 6. Normalisation dans le cube [-1, 1].
-  let maxAbs = 0;
-  for (const p of coords) for (const c of p) maxAbs = Math.max(maxAbs, Math.abs(c));
-  if (maxAbs > EPS) for (const p of coords) for (let k = 0; k < 3; k++) p[k] /= maxAbs;
+  // 6. Normalisation ROBUSTE dans la sphère unité : l'échelle est fixée par le
+  //    90e percentile des rayons (le gros du nuage remplit l'espace, sans être
+  //    écrasé par un ou deux points extrêmes), puis les rares nœuds au-delà sont
+  //    ramenés sur la sphère. Forme naturelle et irrégulière, jamais un cube ni
+  //    un blob minuscule au centre.
+  const radii = coords.map((p) => Math.hypot(p[0], p[1], p[2])).sort((a, b) => a - b);
+  const scale = radii[Math.floor(0.9 * (radii.length - 1))] || radii[radii.length - 1] || 1;
+  if (scale > EPS) for (const p of coords) for (let k = 0; k < 3; k++) p[k] /= scale;
+  for (const p of coords) {
+    const r = Math.hypot(p[0], p[1], p[2]);
+    if (r > 1) { p[0] /= r; p[1] /= r; p[2] /= r; }
+  }
 
   return coords;
 }

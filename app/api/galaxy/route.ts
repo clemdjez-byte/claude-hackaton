@@ -1,86 +1,153 @@
-// Lecture thin pour Galaxy — nœuds (protocoles, runs, rapports) + arêtes du
-// graphe de connaissances de la ws, avec DEUX positions 3D par nœud :
-//   - pos   : layout sémantique (embedding → project3d) — mode RAG
-//   - posKg : layout par la topologie du graphe (graph-layout3d) — mode KG
-// Un rapport (type='report') porte son runId dans son propre content (cf.
-// lib/bench/auto-report), même lecture que app/api/files/route.ts. Le protocolId
-// d'un protocole EST l'id de la page (pas d'indirection), cf. FilesPanel.
+// Lecture pour Galaxy. Deux populations et trois vues de la MÊME workspace :
+//   • documents : RAPPORTS et PROTOCOLES (porteurs d'un embedding). Un run n'est
+//     PAS un nœud : une expérience est représentée par SON RAPPORT, qui hérite
+//     des relations KG du run (paramètres, réactifs, outcome, protocole…).
+//   • entités d'ontologie : réactifs, paramètres, outcomes, failure modes,
+//     publications… reliées par les relations typées du knowledge graph.
+// Trois layouts par nœud :
+//   pos     = embedding sémantique (documents) — vue RAG
+//   posKg   = topologie du graphe — vue KG
+//   posBoth = hybride (documents épinglés à leur pos, entités relâchées) — les deux
+// Clés composites `type:id` (comme le KG) : alignent docs et arêtes et évitent
+// les collisions d'id entre types. Les arêtes pointant vers un run sont
+// redirigées vers le rapport de ce run.
 import { getBenchSession, WS } from "@/lib/session";
-import { listRunsOverview } from "@/lib/bench";
 import { htmlToText } from "@/lib/bench/auto-report";
 import { localEmbed } from "@/lib/retrieval/local-embed";
 import { projectTo3D } from "@/lib/retrieval";
 import { graphLayout3D } from "@/app/shell/graph-layout3d";
-import type { GNode, GEdge, GNode3D } from "@/app/shell/galaxy-layout";
+import { loadLabels } from "@/lib/retrieval/knowledge-graph/query";
+import { REL } from "@/lib/retrieval/knowledge-graph/ontology";
+import type { GEdge, GNode3D, Vec3 } from "@/app/shell/galaxy-layout";
 
 export const runtime = "nodejs";
 
+const DOC_TYPES = new Set(["report", "protocol"]);
+
+/** id technique → libellé lisible (best-effort) : slug → Titre, DOI/ids à points laissés tels quels. */
+function humanize(id: string): string {
+  if (/[./]/.test(id)) return id;
+  const s = id.replace(/_/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : id;
+}
+
 export async function GET() {
   const { store } = getBenchSession();
-  const [pages, runs, rawEdges, embRows] = await Promise.all([
+  const [pages, rawEdges, labelMap, failureModes] = await Promise.all([
     store.listPages(WS, {}),
-    listRunsOverview(store, WS),
     store.listEdges(WS),
-    store.listEmbeddings(WS),
+    loadLabels(store, WS), // kg_node + parameter_type
+    store.listFailureModes(WS),
   ]);
+  for (const fm of failureModes) labelMap.set(`failure_mode:${fm.id}`, fm.mechanism);
 
-  const nodes: GNode[] = [];
-  // Texte de repli par id, pour un embedding local si aucun vecteur stocké
-  // (base seedée sans Voyage : les rapports ne sont pas indexés). Le contenu est
-  // déjà chargé dans p.content — pas de rechargement.
-  const fallbackText = new Map<string, string>();
+  // ── Documents : rapports + protocoles (porteurs d'un embedding) ──
+  type Doc = { key: string; rawId: string; type: "report" | "protocol"; label: string; params: Record<string, string>; text: string };
+  const docs: Doc[] = [];
+  const runToReport = new Map<string, string>(); // runId → clé du rapport (représentant)
   for (const p of pages) {
     if (p.type === "report") {
       const c = p.content as { runId?: string; html?: string } | null;
-      const runId = c?.runId;
-      if (!runId) continue; // défense en profondeur : jamais un rapport orphelin
-      nodes.push({ id: p.id, kind: "report", label: p.title, params: { runId } });
-      fallbackText.set(p.id, c?.html ? htmlToText(c.html) : p.title);
+      if (!c?.runId) continue; // jamais un rapport orphelin
+      const key = `report:${p.id}`;
+      docs.push({ key, rawId: p.id, type: "report", label: p.title, params: { runId: c.runId }, text: c.html ? htmlToText(c.html) : p.title });
+      runToReport.set(c.runId, key);
     } else if (p.type === "protocol") {
-      nodes.push({ id: p.id, kind: "protocol", label: p.title, params: { protocolId: p.id } });
-      fallbackText.set(p.id, p.title);
+      docs.push({ key: `protocol:${p.id}`, rawId: p.id, type: "protocol", label: p.title, params: { protocolId: p.id }, text: p.title });
     }
   }
-  for (const o of runs) {
-    nodes.push({ id: o.run.id, kind: "run", label: o.protocolTitle, params: { runId: o.run.id } });
-    // Titre seul → tous les runs d'un même protocole se superposeraient (même
-    // texte). On y ajoute les paramètres résolus (scalingContext) + le statut
-    // pour que l'embedding local distingue chaque run.
-    const params = Object.entries(o.run.scalingContext)
-      .map(([k, v]) => `${k} ${v}`)
-      .join(" ");
-    fallbackText.set(o.run.id, `${o.protocolTitle} ${params} ${o.run.status}`);
+  const docByKey = new Map(docs.map((d) => [d.key, d]));
+
+  // Redirige une extrémité d'arête : un run → SON rapport ; sinon `type:id`.
+  // null = run sans rapport (impossible à représenter → arête ignorée).
+  const remap = (type: string, id: string): string | null =>
+    type === "run" ? runToReport.get(id) ?? null : `${type}:${id}`;
+
+  // ── Arêtes redirigées + entités d'ontologie référencées ──
+  type Ent = { key: string; rawId: string; type: string };
+  const entByKey = new Map<string, Ent>();
+  const seenEdge = new Set<string>();
+  const remapped: GEdge[] = [];
+  for (const e of rawEdges) {
+    if (e.relation === REL.producedReport) continue; // redondant : le rapport hérite déjà des arêtes du run
+    const from = remap(e.fromType, e.fromId);
+    const to = remap(e.toType, e.toId);
+    if (!from || !to || from === to) continue;
+    for (const key of [from, to]) {
+      if (docByKey.has(key) || entByKey.has(key)) continue;
+      const idx = key.indexOf(":");
+      const type = key.slice(0, idx);
+      if (DOC_TYPES.has(type)) continue; // réf. de doc introuvable → on ignore
+      entByKey.set(key, { key, rawId: key.slice(idx + 1), type });
+    }
+    const dedup = `${from}|${to}`;
+    if (seenEdge.has(dedup)) continue;
+    seenEdge.add(dedup);
+    remapped.push({ from, to });
   }
 
-  // Le knowledge graph enrichi crée des arêtes vers des entités sans nœud visuel
-  // (parameter_type, reagent, outcome, failure_mode, publication…). On ne garde
-  // que les arêtes dont les deux extrémités ont un nœud rendu, pour éviter des
-  // arêtes pendantes dans la galaxie (mode ponytail : filtrer, sans étendre le layout).
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges: GEdge[] = rawEdges
-    .filter((e) => ids.has(e.fromId) && ids.has(e.toId))
-    .map((e) => ({ from: e.fromId, to: e.toId }));
+  // Arêtes gardées (les deux extrémités ont un nœud).
+  const nodeKeys = new Set<string>([...docByKey.keys(), ...entByKey.keys()]);
+  const edges: GEdge[] = remapped.filter((e) => nodeKeys.has(e.from) && nodeKeys.has(e.to));
 
-  // Vecteur par nœud : on privilégie les vrais embeddings stockés (Voyage) quand
-  // ils couvrent TOUS les nœuds de façon homogène (même dimension) — sinon on
-  // bascule sur un embedding local déterministe, pour que la galaxie fonctionne
-  // hors-ligne et sans clé (best-effort : jamais casser le bureau).
-  const vecById = new Map<string, number[]>();
-  for (const { entry, vector } of embRows) {
-    if (entry.sourceType === "evidence") continue; // pas un nœud galaxy
-    vecById.set(entry.sourceId, vector);
+  // ── pos (vue RAG) : on projette les RAPPORTS SEULS (leur texte riche) — nuage
+  //    sémantique isotrope (« patate »). Les protocoles sont EXCLUS de la
+  //    projection (leur titre court en ferait des outliers qui voleraient la
+  //    variance et écraseraient les rapports) : chacun est ramené au BARYCENTRE
+  //    de ses rapports (il en est le thème). Les entités n'ont pas de pos. ──
+  const reports = docs.filter((d) => d.type === "report");
+  const reportPos = projectTo3D(reports.map((d) => localEmbed(d.text)));
+  const posByKey = new Map<string, Vec3>();
+  reports.forEach((d, i) => posByKey.set(d.key, reportPos[i]));
+  const protoReports = new Map<string, Vec3[]>();
+  for (const e of edges) {
+    for (const [a, b] of [[e.from, e.to], [e.to, e.from]] as const) {
+      if (!a.startsWith("protocol:") || !b.startsWith("report:")) continue;
+      const rp = posByKey.get(b);
+      if (!rp) continue;
+      if (!protoReports.has(a)) protoReports.set(a, []);
+      protoReports.get(a)!.push(rp);
+    }
   }
-  const stored = nodes.map((n) => vecById.get(n.id));
-  const allStored = nodes.length > 0 && stored.every((v) => v !== undefined);
-  const uniformDim = new Set(stored.filter((v): v is number[] => !!v).map((v) => v.length)).size <= 1;
-  const vectors: number[][] =
-    allStored && uniformDim
-      ? stored.map((v) => v as number[])
-      : nodes.map((n) => localEmbed(fallbackText.get(n.id) ?? n.label));
+  for (const d of docs) {
+    if (d.type !== "protocol") continue;
+    const rs = protoReports.get(d.key);
+    if (rs && rs.length) {
+      const c: Vec3 = [0, 0, 0];
+      for (const r of rs) { c[0] += r[0]; c[1] += r[1]; c[2] += r[2]; }
+      posByKey.set(d.key, [c[0] / rs.length, c[1] / rs.length, c[2] / rs.length]);
+    } else {
+      posByKey.set(d.key, [0, 0, 0]); // protocole sans rapport → centre
+    }
+  }
 
-  const pos = projectTo3D(vectors);
-  const posKg = graphLayout3D(nodes.map((n) => n.id), edges);
-  const nodes3d: GNode3D[] = nodes.map((n, i) => ({ ...n, pos: pos[i], posKg: posKg[i] }));
+  // ── posBoth (vue KG+RAG) : layout FORCE — la répulsion écarte tout (arêtes
+  //    longues, nuage aéré = « patate »), et un ressort d'ancrage tire chaque
+  //    document vers sa position RAG (il reste ≈ à sa place, l'ontologie se
+  //    déploie autour et non par-dessus). ──
+  const allKeys = [...docByKey.keys(), ...entByKey.keys()];
+  const bothPos = graphLayout3D(allKeys, edges, { iterations: 150, repulsion: 1.4 });
+  const posBothByKey = new Map<string, Vec3>();
+  allKeys.forEach((k, i) => posBothByKey.set(k, bothPos[i]));
 
-  return Response.json({ nodes: nodes3d, edges });
+  // ── Assemblage ──
+  const nodes: GNode3D[] = [];
+  for (const d of docs) {
+    nodes.push({
+      id: d.key, type: d.type, label: d.label, openable: true, params: d.params,
+      isDoc: true,
+      pos: posByKey.get(d.key) ?? null,
+      posBoth: posBothByKey.get(d.key) ?? [0, 0, 0],
+    });
+  }
+  for (const e of entByKey.values()) {
+    nodes.push({
+      id: e.key, type: e.type, label: labelMap.get(e.key) ?? humanize(e.rawId), openable: false, params: {},
+      isDoc: false,
+      pos: null,
+      posBoth: posBothByKey.get(e.key) ?? [0, 0, 0],
+    });
+  }
+
+  return Response.json({ nodes, edges });
 }
