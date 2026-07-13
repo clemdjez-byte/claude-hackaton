@@ -12,6 +12,10 @@
     "test:watch": "vitest",
     "reset": "tsx --env-file-if-exists=.env.local scripts/reset.ts",
     "seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "seed-aml": "rm -f octopus.db* && tsx --env-file-if-exists=.env.local scripts/seed-aml.ts",
+    "seed-fluo": "tsx --env-file-if-exists=.env.local scripts/seed-fluo.ts",
+    "seed-all": "npm run seed-aml && npm run seed-fluo",
+    "add-pcr": "tsx --env-file-if-exists=.env.local scripts/add-pcr-protocol.ts",
     "voice": "concurrently -k -n livekit,agent -c blue,magenta \"livekit-server --dev\" \"tsx --env-file-if-exists=.env.local voice-agent/agent.ts dev\""
   },
   "dependencies": {

@@ -6,15 +6,26 @@
 import { useRef, useState } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { WindowKind } from "@/app/shell/useWindows";
+import { ToolSteps, type ToolStep } from "./ToolSteps";
+import { GraphMini, type GraphData, type Triple, type CrossProtocol } from "./GraphMini";
+import { useGalaxyControl, type FocusSource } from "@/app/shell/GalaxyControlContext";
 
 type Role = "user" | "assistant";
 type SourceHit = { sourceType: string; sourceId: string; score: number; meta?: Record<string, unknown> };
-type ChatMessage = { role: Role; content: string; sources?: SourceHit[] };
+type ChatMessage = {
+  role: Role;
+  content: string;
+  sources?: SourceHit[];
+  steps?: ToolStep[];
+  graph?: GraphData;
+};
 
 const SUGGESTIONS = [
-  "What went wrong in the last run?",
-  "Compare the last two runs.",
-  "Which deviations should I care about?",
+  // Ciblées mais riches : chacune mobilise le graphe et/ou la lecture d'un rapport,
+  // sans pousser l'agent à tout explorer (réponses en ~30–60 s).
+  "Which failure mode recurs across the most protocols, and what's the mechanism?",
+  "Compare quizartinib and gilteritinib potency on MOLM-14, and flag the resistance mechanism behind any failure.",
+  "Based on the documented failures, what should I check before my next dose-response run?",
 ];
 
 /** Fenêtre à ouvrir pour ce type de source, si l'id nécessaire est connu. */
@@ -59,6 +70,7 @@ function SourceChip({ hit }: { hit: SourceHit }) {
 }
 
 export default function ChatClient() {
+  const { setFocus, setMode } = useGalaxyControl();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -104,8 +116,14 @@ export default function ChatClient() {
     setError(null);
     setInput("");
     const history: ChatMessage[] = [...messages, { role: "user", content: question }];
-    setMessages([...history, { role: "assistant", content: "", sources: [] }]);
+    setMessages([...history, { role: "assistant", content: "", sources: [], steps: [] }]);
     setBusy(true);
+
+    // Focus de la galaxie accumulé sur toute la réponse : les documents cités
+    // (event `sources`) ET les entités KG mobilisées (event `graph`). Les deux
+    // événements arrivent séparément → on rappelle setFocus avec l'union courante.
+    let focusSources: FocusSource[] = [];
+    let focusNodeIds: string[] = [];
 
     try {
       const res = await fetch("/api/chat", {
@@ -139,6 +157,65 @@ export default function ChatClient() {
               const next = [...ms];
               const i = next.length - 1;
               next[i] = { ...next[i], sources: hits };
+              return next;
+            });
+            // Braque le « projecteur » de la galaxie sur les sources citées
+            // (en gardant les entités KG déjà reçues via l'event `graph`).
+            focusSources = hits.map((h) => ({
+              sourceType: h.sourceType,
+              sourceId: h.sourceId,
+              runId: typeof h.meta?.runId === "string" ? (h.meta.runId as string) : undefined,
+            }));
+            setFocus(focusSources, focusNodeIds);
+          } else if (ev.type === "graph") {
+            // Le serveur envoie les faits chiffrés (facts.crossProtocol) + les
+            // triplets ouverts + les labels : de quoi dessiner le sous-graphe.
+            const facts = (ev.facts ?? {}) as { crossProtocol?: CrossProtocol[] };
+            const graph: GraphData = {
+              crossProtocol: Array.isArray(facts.crossProtocol) ? facts.crossProtocol : [],
+              triples: Array.isArray(ev.triples) ? (ev.triples as Triple[]) : [],
+              labels: (ev.labels ?? {}) as Record<string, string>,
+            };
+            setMessages((ms) => {
+              const next = [...ms];
+              const i = next.length - 1;
+              next[i] = { ...next[i], graph };
+              return next;
+            });
+            // Allume aussi les entités du knowledge graph mobilisées : chaque
+            // extrémité des triplets est un nœud `type:id` de la galaxie.
+            focusNodeIds = [
+              ...new Set(
+                graph.triples.flatMap((t) => [`${t.fromType}:${t.fromId}`, `${t.toType}:${t.toId}`])
+              ),
+            ];
+            setFocus(focusSources, focusNodeIds);
+            // La réponse mobilise le graphe (recoupement inter-protocoles) →
+            // révèle les relations en basculant sur la lentille tissée.
+            if (graph.crossProtocol.length > 0) setMode("ragkg");
+          } else if (ev.type === "tool_call") {
+            const step: ToolStep = { name: String(ev.name ?? "tool"), args: ev.args as Record<string, unknown> };
+            setMessages((ms) => {
+              const next = [...ms];
+              const i = next.length - 1;
+              next[i] = { ...next[i], steps: [...(next[i].steps ?? []), step] };
+              return next;
+            });
+          } else if (ev.type === "tool_result") {
+            const name = String(ev.name ?? "tool");
+            const data = (ev.data ?? {}) as Record<string, unknown>;
+            setMessages((ms) => {
+              const next = [...ms];
+              const i = next.length - 1;
+              const steps = [...(next[i].steps ?? [])];
+              // Attache le résultat au dernier appel de même nom encore sans résultat.
+              for (let j = steps.length - 1; j >= 0; j--) {
+                if (steps[j].name === name && steps[j].result === undefined) {
+                  steps[j] = { ...steps[j], result: data };
+                  break;
+                }
+              }
+              next[i] = { ...next[i], steps };
               return next;
             });
           } else if (ev.type === "text_chunk") {
@@ -196,11 +273,14 @@ export default function ChatClient() {
         {messages.map((m, i) => (
           <div key={i} className={`flex fade-up ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm ${
+              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
                 m.role === "user" ? "bg-accent text-white" : "card"
               }`}
             >
-              {m.content || (busy && i === messages.length - 1 ? "…" : "")}
+              {m.role === "assistant" && !!m.steps?.length && <ToolSteps steps={m.steps} />}
+              <span className="whitespace-pre-wrap">
+                {m.content || (busy && i === messages.length - 1 ? "…" : "")}
+              </span>
               {m.role === "assistant" && !!m.sources?.length && (
                 <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-2.5">
                   {m.sources.map((h, j) => (
@@ -208,6 +288,7 @@ export default function ChatClient() {
                   ))}
                 </div>
               )}
+              {m.role === "assistant" && m.graph && <GraphMini data={m.graph} />}
             </div>
           </div>
         ))}
