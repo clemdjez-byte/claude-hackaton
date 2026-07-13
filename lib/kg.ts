@@ -68,6 +68,9 @@ export async function indexRunGraph(db: Db, run: Run, _steps: Step[], protocol: 
 
     // Noyau chiffré : structure du run (paramètres appliqués, réactifs, lignées).
     await link(db, ws, NODE.run(run.id), REL.instanceOf, NODE.protocol(protocol.id), { provenance: "extracted" });
+    // Rattache le rapport à son expérience : le rapport est produit après le run
+    // (generateReport tourne avant indexRunGraph), on matérialise le lien.
+    if (report) await link(db, ws, NODE.run(run.id), REL.producedReport, NODE.report(report.id), { provenance: "derived" });
     for (const pv of ex.paramValues)
       await link(db, ws, NODE.run(run.id), REL.hasValue, NODE.parameterType(pv.key), { provenance: "extracted", attrs: { value: pv.value, unit: pv.unit } });
     for (const r of ex.reagents) await link(db, ws, NODE.run(run.id), REL.uses, NODE.reagent(r), { provenance: "extracted" });

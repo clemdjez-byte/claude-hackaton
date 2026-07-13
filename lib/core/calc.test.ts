@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scaleMasterMix, convert, dilution, round } from "./calc";
+import { scaleMasterMix, convert, dilution, round, molarity, describe as describeStats } from "./calc";
 import type { Recipe } from "./types";
 
 // Recette RT-qPCR de référence (SYBR Green PowerUp, réaction 20 µL).
@@ -85,5 +85,37 @@ describe("dilution C1·V1 = C2·V2", () => {
     expect(() =>
       dilution({ value: 10, unit: "µM" }, { value: 100, unit: "µM" }, { value: 100, unit: "µL" })
     ).toThrow();
+  });
+});
+
+describe("molarity m = C·V·MW", () => {
+  it("masse pour un stock (quizartinib MW 560,5 → 1 mL à 10 mM)", () => {
+    const r = molarity({ molarMass: 560.5, solve: "mass", concentration: { value: 10, unit: "mM" }, volume: { value: 1, unit: "mL" } });
+    expect(r.unit).toBe("mg");
+    expect(r.value).toBe(5.605);
+  });
+  it("concentration depuis une masse pesée (5,605 mg dans 1 mL)", () => {
+    const r = molarity({ molarMass: 560.5, solve: "concentration", mass: { value: 5.605, unit: "mg" }, volume: { value: 1, unit: "mL" } });
+    expect(r.unit).toBe("mM");
+    expect(r.value).toBe(10);
+  });
+  it("rejette une entrée incomplète", () => {
+    expect(() => molarity({ molarMass: 560.5, solve: "mass", volume: { value: 1, unit: "mL" } })).toThrow();
+  });
+});
+
+describe("describe — stats descriptives déterministes", () => {
+  it("n, moyenne, médiane, écart-type échantillon", () => {
+    const s = describeStats([2, 4, 4, 4, 5, 5, 7, 9])!;
+    expect(s.n).toBe(8);
+    expect(s.mean).toBe(5);
+    expect(s.median).toBe(4.5);
+    expect(s.sd).toBe(2.1381); // écart-type d'échantillon (n-1)
+    expect(s.min).toBe(2);
+    expect(s.max).toBe(9);
+  });
+  it("renvoie null si aucune valeur finie", () => {
+    expect(describeStats([])).toBeNull();
+    expect(describeStats([NaN, Infinity])).toBeNull();
   });
 });

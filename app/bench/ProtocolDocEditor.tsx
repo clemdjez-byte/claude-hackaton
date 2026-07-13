@@ -9,7 +9,7 @@ import { ProtocolStepNode, makeEmptyStep } from "@/app/components/protocol-step-
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import ScaleActivatePanel from "./ScaleActivatePanel";
 import type { Protocol, Recipe } from "@/lib/core/types";
-import { startRunAction, publishProtocolAction } from "./actions";
+import { startRunAction, publishProtocolAction, setProtocolArchivedAction } from "./actions";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -34,6 +34,8 @@ export default function ProtocolDocEditor({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [recipe, setRecipe] = useState<Recipe | null>(protocol.recipe ?? null);
+  // Le protocole s'ouvre en LECTURE SEULE ; « Modify protocol » passe en édition.
+  const [editing, setEditing] = useState(false);
   const [nReactions, setNReactions] = useState(() => paramDefault(protocol, "n_reactions", 6));
   const [overagePct, setOveragePct] = useState(() => paramDefault(protocol, "overage_pct", 10));
   const editorRef = useRef<Editor | null>(null);
@@ -81,12 +83,6 @@ export default function ProtocolDocEditor({
     recipeRef.current = null;
     void save();
   }
-  function onAddRecipe() {
-    const r: Recipe = { name: "Master mix", components: [] };
-    setRecipe(r);
-    recipeRef.current = r;
-    void save();
-  }
 
   async function flushSave() {
     const result = save.flush();
@@ -111,6 +107,11 @@ export default function ProtocolDocEditor({
   useEffect(() => () => {
     save.flush();
   }, [save]);
+
+  // Reflète le mode lecture seule / édition sur l'instance Tiptap.
+  useEffect(() => {
+    editorRef.current?.setEditable(editing);
+  }, [editing]);
 
   function onTitleChange(v: string) {
     setTitle(v);
@@ -156,6 +157,17 @@ export default function ProtocolDocEditor({
     });
   }
 
+  const isArchived = status === "archived";
+  function toggleArchive() {
+    setError(null);
+    const next = !isArchived;
+    start(async () => {
+      await setProtocolArchivedAction(protocol.id, next);
+      // Désarchivage : retombe sur published si sourcé, sinon draft (cf. brique).
+      setStatus(next ? "archived" : protocol.sources.length > 0 ? "published" : "draft");
+    });
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-8 py-8">
       {/* barre d'état */}
@@ -172,6 +184,7 @@ export default function ProtocolDocEditor({
       <input
         value={title}
         onChange={(e) => onTitleChange(e.target.value)}
+        readOnly={!editing}
         placeholder="Titre du protocole"
         className="mb-3 w-full bg-transparent text-3xl font-semibold tracking-tight focus:outline-none placeholder:text-muted-soft"
       />
@@ -188,24 +201,44 @@ export default function ProtocolDocEditor({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={publish}
-            disabled={pending || !canPublish}
-            className="btn-primary px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Publish
-          </button>
-          <button
-            type="button"
-            onClick={startRun}
+            onClick={toggleArchive}
             disabled={pending}
-            className="btn-accent px-3 py-1.5 text-sm disabled:opacity-50"
+            className="chip disabled:opacity-50"
           >
-            {pending ? "…" : "Activate at the bench →"}
+            {isArchived ? "Unarchive" : "Archive"}
           </button>
+          {!isArchived && (
+            <>
+              <button
+                type="button"
+                onClick={() => setEditing((v) => !v)}
+                disabled={pending}
+                className="chip disabled:opacity-50"
+              >
+                {editing ? "Done" : "Modify protocol"}
+              </button>
+              <button
+                type="button"
+                onClick={publish}
+                disabled={pending || !canPublish}
+                className="btn-primary px-3 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Publish
+              </button>
+              <button
+                type="button"
+                onClick={startRun}
+                disabled={pending}
+                className="btn-accent px-3 py-1.5 text-sm disabled:opacity-50"
+              >
+                {pending ? "…" : "Run experiment →"}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {recipe ? (
+      {recipe && editing ? (
         <ScaleActivatePanel
           recipe={recipe}
           nReactions={nReactions}
@@ -217,20 +250,13 @@ export default function ProtocolDocEditor({
           }}
           onRemove={onRemoveRecipe}
         />
-      ) : (
-        <button
-          type="button"
-          onClick={onAddRecipe}
-          className="mb-5 inline-flex items-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-accent"
-        >
-          ＋ Ajouter un master mix (Scale &amp; activate)
-        </button>
-      )}
+      ) : null}
 
       {/* éditeur document */}
       <div className="doc-editor">
         <NoteEditor
           initialContent={initialDoc}
+          editable={editing}
           extraExtensions={[ProtocolStepNode]}
           editorClassName="focus:outline-none min-h-[320px]"
           onChange={(_html, json) => {
@@ -244,13 +270,15 @@ export default function ProtocolDocEditor({
         />
       </div>
 
-      <button
-        type="button"
-        onClick={addStep}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-accent"
-      >
-        ＋ Ajouter une étape
-      </button>
+      {editing && (
+        <button
+          type="button"
+          onClick={addStep}
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-dashed border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-accent"
+        >
+          ＋ Ajouter une étape
+        </button>
+      )}
     </div>
   );
 }

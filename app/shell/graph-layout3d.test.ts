@@ -51,4 +51,17 @@ describe("graphLayout3D", () => {
     expect(out).toHaveLength(2);
     for (const p of out) for (const c of p) expect(Number.isFinite(c)).toBe(true);
   });
+
+  it("nœud fixe (fixed) : sa position reste exactement celle de initial", () => {
+    const ids = ["doc", "e1", "e2"];
+    const edges: GEdge[] = [{ from: "doc", to: "e1" }, { from: "doc", to: "e2" }];
+    const initial: ([number, number, number] | null)[] = [[0.5, -0.5, 0.25], null, null];
+    const out = graphLayout3D(ids, edges, { initial, fixed: [true, false, false], clamp: true });
+    expect(out[0]).toEqual([0.5, -0.5, 0.25]); // doc épinglé, inchangé
+    // les entités reliées se rapprochent du doc (clampées dans [-1,1], finies)
+    for (const p of out) for (const c of p) {
+      expect(Number.isFinite(c)).toBe(true);
+      expect(Math.abs(c)).toBeLessThanOrEqual(1 + 1e-9);
+    }
+  });
 });

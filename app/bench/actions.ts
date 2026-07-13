@@ -13,6 +13,7 @@ import {
   generateProtocol,
   adaptProtocol,
   publishProtocol,
+  setProtocolArchived,
   sealDraft,
   advanceStep,
   skipStep,
@@ -24,12 +25,11 @@ import {
   captureMeasurement,
   captureDeviation,
   deleteEvidence,
-  getRunContext,
   generateReport,
   exportReportMarkdown,
 } from "@/lib/bench";
 import { getBenchSession, WS } from "@/lib/session";
-import { indexProtocol, indexEvidence, indexRun, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
+import { indexProtocol, indexEvidence, indexReport, linkRunToProtocol, linkReportToRun } from "@/lib/rag";
 import { indexProtocolGraph } from "@/lib/kg";
 
 // ── Protocoles (bibliothèque) ─────────────────────────────────────────────
@@ -57,6 +57,16 @@ export async function publishProtocolAction(protocolId: string): Promise<void> {
   await indexProtocolGraph(store, protocol);
 }
 
+/** Archive un protocole (ou le désarchive) : il quitte la bibliothèque active
+ *  et n'est plus activable au bench. */
+export async function setProtocolArchivedAction(
+  protocolId: string,
+  archived: boolean
+): Promise<void> {
+  const { store } = getBenchSession();
+  await setProtocolArchived(store, protocolId, archived);
+}
+
 /** Fige une version immuable depuis le brouillon (draft_doc), sans publier. */
 export async function sealDraftAction(protocolId: string): Promise<void> {
   const { store } = getBenchSession();
@@ -74,9 +84,10 @@ export async function startRunAction(
   overage: number
 ): Promise<{ runId: string }> {
   const { store, ctx } = getBenchSession();
-  const { version, protocol } = await sealDraft(store, protocolId);
-  await indexProtocol(store, protocol);
-  await indexProtocolGraph(store, protocol);
+  // Seal the current draft into a frozen version and start the run. The protocol's
+  // RAG/KG indexing already ran at publish; re-indexing here added several seconds
+  // of LLM calls (and duplicated failure_mode nodes) to every activation.
+  const { version } = await sealDraft(store, protocolId);
   const runCtx = await startRun(store, WS, {
     operator: ctx.userId,
     protocolId,
@@ -162,13 +173,11 @@ export async function deleteEvidenceAction(runId: string, evidenceId: string): P
  *  panneau rapport régénère si besoin au chargement. */
 export async function completeRunAction(runId: string): Promise<{ runId: string }> {
   const { store } = getBenchSession();
-  // Capturé avant complétion : titre du protocole + étapes, pour l'indexation du run.
-  const ctx = await getRunContext(store, runId);
-  const run = await completeRun(store, runId);
+  await completeRun(store, runId);
   try {
     const report = await generateReport(store, runId);
     await linkReportToRun(store, report.id, runId); // best-effort, cf. lib/rag.ts
-    if (ctx) await indexRun(store, run, ctx.protocol.title, ctx.steps);
+    // RAG : on indexe le RAPPORT (le compte-rendu riche du run), pas le résumé maigre du run.
     const markdown = await exportReportMarkdown(store, runId);
     await indexReport(store, report, markdown);
   } catch {

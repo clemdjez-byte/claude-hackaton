@@ -1,0 +1,64 @@
+graph TB
+  subgraph ING["1 · INGESTION (écriture)"]
+    EV["Événements du labo<br/>protocole publié · run · preuves · rapport SIGNÉ"]
+    RAGW["RAG · indexEntry()<br/>le texte devient un vecteur d'embedding"]
+    KGW["KG · extraction IA<br/>indexProtocolGraph / indexRunGraph"]
+    CORE["Noyau chiffré<br/>paramètres · verdict LU dans le texte · seuils · causes"]
+    OPEN["Ontologie OUVERTE<br/>l'IA crée des nœuds/relations FACTUELS<br/>réactif · instrument · opérateur · échantillon · date"]
+    RECON["Réconciliation anti-doublon (à l'écriture)<br/>clé canonique + alias + on montre à l'IA les entités<br/>connues pour qu'elle RÉUTILISE au lieu de dupliquer"]
+    EV -->|"double écriture · texte"| RAGW
+    EV -->|"double écriture · à la SIGNATURE"| KGW
+    KGW --> CORE
+    KGW --> OPEN
+    OPEN --> RECON
+  end
+
+  subgraph STO["2 · STOCKAGE"]
+    EMB[("embedding<br/>vecteurs + texte + source")]
+    KGDB[("Graphe · kg_node · kg_edge<br/>outcome · failure_mode · parameter_type")]
+  end
+
+  RAGW --> EMB
+  CORE --> KGDB
+  RECON --> KGDB
+
+  subgraph MNT["ENTRETIEN — anti-doublon (carte maîtresse)"]
+    BTN["Bouton « Consolidate graph »<br/>(dans Ask your lab)"]
+    SCAN["Scan de consolidation régulier<br/>Tier 1 déterministe : MitoTracker = Mito Tracker<br/>Tier 2 juge IA : dose de quizartinib = quizartinib concentration"]
+    BTN --> SCAN
+  end
+  SCAN ==>|"fusionne les synonymes qui ont glissé"| KGDB
+
+  subgraph QRY["3 · QUESTION / lecture (« Ask your lab »)"]
+    Q["Question en langage naturel"]
+    RAGR["RAG · search()<br/>TOP-K passages pertinents"]
+    KGR["KG · départ = les ancres (runs / protocoles)"]
+    GF["collectGraphFacts<br/>verdicts · seuils violés · recoupements inter-protocoles"]
+    GG["collectGenericFacts<br/>triplets ouverts : quel instrument / opérateur pour tel run"]
+    PROMPT["Prompt = GRAPH FACTS + TEXT EXCERPTS + question"]
+    CLAUDE["Claude"]
+    ANS["Réponse CITÉE avec sources<br/>run:ab12 · instrument:confocal_zeiss"]
+    Q -->|"1 · embed + similarité cosinus"| RAGR
+    RAGR ==>|"3 · LES HITS DEVIENNENT LES ANCRES DU KG"| KGR
+    RAGR -->|"2 · TEXT EXCERPTS"| PROMPT
+    KGR --> GF
+    KGR --> GG
+    GF -->|"GRAPH FACTS"| PROMPT
+    GG -->|"GRAPH FACTS"| PROMPT
+    PROMPT --> CLAUDE
+    CLAUDE --> ANS
+  end
+
+  EMB -.->|"lit"| RAGR
+  KGDB -.->|"lit"| KGR
+
+  classDef rag fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
+  classDef kg fill:#d1fae5,stroke:#059669,color:#064e3b,stroke-width:2px;
+  classDef store fill:#e2e8f0,stroke:#475569,color:#0f172a,stroke-width:2px;
+  classDef star fill:#fde68a,stroke:#d97706,color:#7c2d12,stroke-width:3px;
+  classDef io fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:2px;
+  class RAGW,RAGR rag;
+  class KGW,CORE,OPEN,KGR,GF,GG kg;
+  class EMB,KGDB store;
+  class RECON,BTN,SCAN star;
+  class EV,Q,PROMPT,CLAUDE,ANS io;

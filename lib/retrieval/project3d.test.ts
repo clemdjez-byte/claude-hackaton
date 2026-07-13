@@ -30,18 +30,17 @@ describe("projectTo3D", () => {
     expect(dist(out[0], out[1])).toBeGreaterThan(0);
   });
 
-  it("coords finies et bornées dans [-1, 1], le cube est rempli (max ≈ 1)", () => {
+  it("coords finies dans la sphère unité (rayon ≤ 1), sphère remplie (rayon max ≈ 1)", () => {
     const out = projectTo3D(vecs);
     expect(out).toHaveLength(vecs.length);
-    let maxAbs = 0;
+    let maxR = 0;
     for (const p of out) {
-      for (const c of p) {
-        expect(Number.isFinite(c)).toBe(true);
-        expect(Math.abs(c)).toBeLessThanOrEqual(1 + 1e-9);
-        maxAbs = Math.max(maxAbs, Math.abs(c));
-      }
+      for (const c of p) expect(Number.isFinite(c)).toBe(true);
+      const r = Math.hypot(p[0], p[1], p[2]);
+      expect(r).toBeLessThanOrEqual(1 + 1e-9);
+      maxR = Math.max(maxR, r);
     }
-    expect(maxAbs).toBeGreaterThan(0.99);
+    expect(maxR).toBeGreaterThan(0.99);
   });
 
   it("déterministe : deux appels identiques → sorties strictement égales", () => {

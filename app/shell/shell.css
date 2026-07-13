@@ -336,11 +336,11 @@
   transform: translateX(-50%);
   width: 680px;
   max-width: 92vw;
-  height: 58px;
+  height: 72px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 10px 0 20px;
+  gap: 14px;
+  padding: 0 12px 0 22px;
   border-radius: 9999px;
   background: var(--surface);
   border: 1px solid var(--oct-border, #e5e2d8);
@@ -365,10 +365,21 @@
   border-radius: 9999px;
   background: var(--muted-soft);
 }
+.entry-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex: none;
+  transition: color 140ms ease;
+}
+.entry:hover .entry-tools {
+  color: var(--foreground);
+}
 .entry-placeholder {
   flex: 1;
   text-align: left;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--muted);
 }
 .entry-kbd {
@@ -397,6 +408,137 @@
 }
 .entry-hidden {
   display: none;
+}
+
+/* Composeur « pilule » partagé (barre du bureau + barre de la fenêtre de chat).
+   Même habillage que .entry, mais fonctionnel (vrai champ + boutons). */
+.dock-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  width: 680px;
+  max-width: 92vw;
+  z-index: 6;
+}
+.dock-anchor.hidden {
+  display: none;
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 64px;
+  padding: 0 8px 0 14px;
+  border-radius: 9999px;
+  background: var(--surface);
+  border: 1px solid var(--oct-border, #e5e2d8);
+  box-shadow: 0 8px 28px rgba(20, 17, 13, 0.08);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.composer-bar:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: 0 10px 34px rgba(20, 17, 13, 0.12);
+}
+.composer-grip {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+}
+.composer-grip span {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--muted-soft);
+}
+.composer-tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  color: var(--muted);
+  transition: color 140ms ease, background 140ms ease;
+}
+.composer-tools:hover {
+  color: var(--foreground);
+  background: var(--surface-2);
+}
+.composer-tools.active {
+  color: var(--accent);
+}
+.composer-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 6px 4px 11px;
+  border-radius: 9999px;
+  font-size: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.composer-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-chip button {
+  color: inherit;
+  opacity: 0.7;
+  line-height: 1;
+}
+.composer-chip button:hover {
+  opacity: 1;
+}
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: var(--foreground);
+}
+.composer-input::placeholder {
+  color: var(--muted);
+}
+.composer-input:disabled {
+  opacity: 0.6;
+}
+.composer-kbd {
+  flex: none;
+  font-family: var(--font-mono-display), var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+.composer-send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: #fff;
+  transition: opacity 140ms ease;
+}
+.composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.composer-send:not(:disabled):hover {
+  opacity: 0.92;
 }
 
 /* background layer: decorative AND navigable (click a node → open its window).

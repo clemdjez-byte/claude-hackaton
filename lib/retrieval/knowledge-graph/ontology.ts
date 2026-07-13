@@ -14,6 +14,7 @@ export type KgNode = { type: string; id: string };
 export const NODE = {
   protocol: (id: string): KgNode => ({ type: "protocol", id }),
   run: (id: string): KgNode => ({ type: "run", id }),
+  report: (id: string): KgNode => ({ type: "report", id }),
   outcome: (id: string): KgNode => ({ type: "outcome", id }),
   failureMode: (id: string): KgNode => ({ type: "failure_mode", id }),
   parameterType: (key: string): KgNode => ({ type: "parameter_type", id: key }),
@@ -29,6 +30,7 @@ export const REL = {
   usesParam: "uses_param", // Protocol → ParameterType
   uses: "uses", // Run|Protocol → Reagent
   resultedIn: "resulted_in", // Run → Outcome
+  producedReport: "produced_report", // Run → Report (rattache le rapport à son expérience)
   cites: "cites", // Protocol → Publication
   declares: "declares", // Protocol → FailureMode
   about: "about", // FailureMode → ParameterType

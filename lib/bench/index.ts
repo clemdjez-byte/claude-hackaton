@@ -8,6 +8,7 @@ export {
   createProtocol,
   updateProtocol,
   publishProtocol,
+  setProtocolArchived,
   sealDraft,
   adaptProtocol,
   generateProtocol,

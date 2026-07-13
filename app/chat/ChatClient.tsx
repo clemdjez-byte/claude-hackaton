@@ -13,8 +13,8 @@ import { GraphMini, type GraphData, type Triple, type CrossProtocol } from "./Gr
 import { useConversations } from "./useConversations";
 import ConversationSidebar from "./ConversationSidebar";
 import AnswerBody from "./AnswerBody";
-import ToolsMenu from "./ToolsMenu";
-import { TOOL_LABELS } from "./toolCatalog";
+import ComposerBar from "./ComposerBar";
+import { useChatComposer } from "./ChatComposerContext";
 import type { ChatMessage, SourceHit } from "./types";
 
 const SUGGESTIONS = [
@@ -33,18 +33,19 @@ function dropEmptyAssistantTail(list: ChatMessage[]): ChatMessage[] {
 
 export default function ChatClient() {
   const { setFocus, setMode } = useGalaxyControl();
-  const { conversations, activeId, active, create, select, remove, updateMessages } = useConversations();
+  const { conversations, activeId, active, ready, create, select, remove, updateMessages } = useConversations();
+  const { pending, consume } = useChatComposer();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [consolidateMsg, setConsolidateMsg] = useState<string | null>(null);
-  // Menu Tools : outil épinglé manuellement pour le PROCHAIN message (sinon
-  // l'agent choisit seul). Consommé à l'envoi.
-  const [toolsOpen, setToolsOpen] = useState(false);
+  // Outil épinglé manuellement pour le PROCHAIN message (sinon l'agent choisit
+  // seul). Consommé à l'envoi. Le menu Tools vit désormais dans ComposerBar.
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const pendingToken = useRef(0);
 
   const messages = active?.messages ?? [];
 
@@ -62,6 +63,23 @@ export default function ChatClient() {
   useEffect(() => {
     setFocus([], []);
   }, [activeId, setFocus]);
+
+  // Question composée dans la barre du bureau : à l'ouverture de la fenêtre on la
+  // consomme et on l'envoie dans une NOUVELLE conversation (l'outil épinglé au
+  // bureau est transmis). Le token évite tout renvoi en double.
+  useEffect(() => {
+    if (!ready || !pending || pending.token === pendingToken.current) return;
+    pendingToken.current = pending.token;
+    const { text, tool } = pending;
+    // Différé hors de l'exécution synchrone de l'effet : create()/send() font des
+    // setState, qui cascaderaient les rendus s'ils étaient appelés directement ici.
+    queueMicrotask(() => {
+      const id = create();
+      void send(text, { forcedTool: tool, convId: id });
+      consume();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pending, create, consume]);
 
   // Dédoublonnage du knowledge graph à la demande : fusionne les concepts en
   // double pour que les questions transverses relient bien les protocoles. Sûr
@@ -88,21 +106,20 @@ export default function ChatClient() {
     }
   }
 
-  async function send(text: string) {
+  async function send(text: string, opts?: { forcedTool?: string | null; convId?: string }) {
     const question = text.trim();
     if (!question || busy) return;
-    const forcedTool = selectedTool; // épinglé via le menu Tools ; consommé maintenant
+    const forcedTool = opts?.forcedTool !== undefined ? opts.forcedTool : selectedTool;
     setSelectedTool(null);
     setError(null);
     setInput("");
 
-    // Cible : conversation active, ou nouvelle si aucune. On garde l'id sous la
-    // main pour que le streaming vise CETTE conversation même si l'utilisateur
-    // en sélectionne une autre entre-temps.
-    let convId = activeId;
-    let base: ChatMessage[] = [];
+    // Cible : conversation imposée (question déposée par le bureau), sinon
+    // l'active, sinon une nouvelle. On garde l'id sous la main pour que le
+    // streaming vise CETTE conversation même si l'utilisateur en change entre-temps.
+    let convId = opts?.convId ?? activeId;
     if (!convId) convId = create();
-    else base = messages; // convId === activeId ici → messages = active.messages
+    const base = conversations.find((c) => c.id === convId)?.messages ?? [];
 
     const history: ChatMessage[] = [...base, { role: "user", content: question }];
     updateMessages(convId, () => [...history, { role: "assistant", content: "", sources: [], steps: [] }]);
@@ -301,58 +318,16 @@ export default function ChatClient() {
           <div className="card mt-4 shrink-0 border-danger/40 bg-danger/5 p-3 text-sm text-danger">{error}</div>
         )}
 
-        {selectedTool && (
-          <div className="mt-2 flex shrink-0 items-center gap-2">
-            <span className="pill accent inline-flex items-center gap-1.5">
-              🔧 {TOOL_LABELS[selectedTool] ?? selectedTool}
-              <button
-                type="button"
-                onClick={() => setSelectedTool(null)}
-                className="opacity-70 hover:opacity-100"
-                aria-label="Remove pinned tool"
-              >
-                ✕
-              </button>
-            </span>
-            <span className="text-xs text-muted">forced for the next message</span>
-          </div>
-        )}
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-          className="mt-3 flex shrink-0 items-center gap-2"
-        >
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              className={`chip ${toolsOpen || selectedTool ? "accent" : ""}`}
-              onClick={() => setToolsOpen((v) => !v)}
-              title="Force a specific tool for the next message"
-            >
-              Tools
-            </button>
-            {toolsOpen && (
-              <ToolsMenu
-                selected={selectedTool}
-                onPick={setSelectedTool}
-                onClose={() => setToolsOpen(false)}
-              />
-            )}
-          </div>
-          <input
-            className="input-field flex-1 px-4 py-2.5 text-sm"
-            placeholder="Ask about a protocol, a run, a deviation…"
+        <div className="mt-3 shrink-0">
+          <ComposerBar
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={busy}
+            onChange={setInput}
+            onSubmit={() => send(input)}
+            selectedTool={selectedTool}
+            onPickTool={setSelectedTool}
+            busy={busy}
           />
-          <button type="submit" className="btn-accent shrink-0" disabled={busy || !input.trim()}>
-            Send
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );

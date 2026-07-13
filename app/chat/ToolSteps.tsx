@@ -2,16 +2,9 @@
 // app/chat/ToolSteps.tsx — montre que le copilote « travaille » : une ligne par
 // outil appelé (🔧), et, pour scale_recipe, le TABLEAU de volumes exacts (calculés
 // par du code déterministe, jamais par le LLM — donc jamais hallucinés).
-export type ToolStep = { name: string; args?: Record<string, unknown>; result?: Record<string, unknown> };
+import { TOOL_LABELS } from "./toolCatalog";
 
-const LABELS: Record<string, string> = {
-  search_memory: "Recherche dans la mémoire du labo",
-  read_report: "Lecture du rapport complet",
-  list_protocols: "Liste des protocoles",
-  list_runs: "Liste des runs",
-  traverse_graph: "Traversée du knowledge graph",
-  scale_recipe: "Calcul de la recette (déterministe)",
-};
+export type ToolStep = { name: string; args?: Record<string, unknown>; result?: Record<string, unknown> };
 
 type Qty = { value: number; unit: string };
 type Component = { name: string; perReaction: Qty; total: Qty; shared: boolean };
@@ -64,7 +57,7 @@ export function ToolSteps({ steps }: { steps: ToolStep[] }) {
   return (
     <div className="mb-2 space-y-1">
       {steps.map((s, i) => {
-        const label = LABELS[s.name] ?? s.name;
+        const label = TOOL_LABELS[s.name] ?? s.name;
         const done = s.result !== undefined;
         const recipe =
           s.name === "scale_recipe" && s.result?.ok

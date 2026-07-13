@@ -19,7 +19,7 @@ export function WindowContent({ win }: { win: Win }) {
     case "settings":
       return <div className="p-6 text-sm">Workspace: demo</div>;
     case "bench-hub":
-      return <BenchHubPanel winId={win.id} />;
+      return <BenchHubPanel />;
     case "protocols":
       return <ProtocolsPanel />;
     case "import":

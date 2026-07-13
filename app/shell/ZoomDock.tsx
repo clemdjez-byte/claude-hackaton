@@ -32,22 +32,9 @@ function BothIcon() {
   );
 }
 
-// Traits (KG) : structure du graphe, arêtes accentuées, nœuds creux.
-function LinesIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 7L17 6M7 7L13 17M17 6L13 17" />
-      <circle cx="7" cy="7" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
-      <circle cx="17" cy="6" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
-      <circle cx="13" cy="17" r="1.7" fill="var(--surface, #fff)" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
 const OPTIONS: { mode: GalaxyMode; label: string; title: string; icon: ReactNode }[] = [
-  { mode: "rag", label: "RAG", title: "Nuage de points — positions par embedding, sans les liens", icon: <PointsIcon /> },
-  { mode: "ragkg", label: "R+K", title: "Points et traits — sémantique + arêtes du knowledge graph", icon: <BothIcon /> },
-  { mode: "kg", label: "KG", title: "Traits — structure du graphe (topologie des liens)", icon: <LinesIcon /> },
+  { mode: "rag", label: "RAG", title: "Nuage de points — documents positionnés par leur embedding, sans les liens", icon: <PointsIcon /> },
+  { mode: "ragkg", label: "KG", title: "Knowledge graph — documents + ontologie + relations, forme organique", icon: <BothIcon /> },
 ];
 
 export function ZoomDock({ mode, onChange }: { mode: GalaxyMode; onChange: (m: GalaxyMode) => void }) {

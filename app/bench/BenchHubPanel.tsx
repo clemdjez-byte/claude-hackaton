@@ -70,8 +70,8 @@ function RunCard({
   );
 }
 
-export default function BenchHubPanel({ winId }: { winId?: string }) {
-  const { open, close } = useWindowsContext();
+export default function BenchHubPanel() {
+  const { open } = useWindowsContext();
   const [view, setView] = useState<"hub" | "runs">("hub");
   const [data, setData] = useState<RunsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,20 +109,23 @@ export default function BenchHubPanel({ winId }: { winId?: string }) {
   if (view === "runs") {
     return (
       <div className="px-4 sm:px-8 py-10 max-w-3xl mx-auto w-full space-y-8">
+        <button
+          type="button"
+          onClick={() => setView("hub")}
+          className="inline-flex items-center gap-1.5 text-[14px] text-muted hover:text-foreground transition-colors fade-in"
+        >
+          ← Back to bench
+        </button>
+
         <header className="fade-in">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="eyebrow mb-3">Live experiment</p>
               <h1 className="text-3xl font-semibold tracking-tight">Runs in progress</h1>
             </div>
             <button type="button" onClick={() => open("protocols")} className="btn-accent shrink-0 mt-1">
               New experiment →
             </button>
           </div>
-          <p className="text-base text-muted mt-3 max-w-xl" style={{ lineHeight: 1.6 }}>
-            Every experiment currently running at the bench. You can have several at once. Open one
-            to keep going, or activate a protocol to start a new run.
-          </p>
         </header>
 
         {error && <p className="text-sm text-danger">{error}</p>}
@@ -174,10 +177,6 @@ export default function BenchHubPanel({ winId }: { winId?: string }) {
             </div>
           </section>
         )}
-
-        <button type="button" onClick={() => setView("hub")} className="text-sm text-muted hover:text-foreground">
-          ← Back to bench
-        </button>
       </div>
     );
   }
@@ -213,14 +212,6 @@ export default function BenchHubPanel({ winId }: { winId?: string }) {
           ))}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => winId && close(winId)}
-        className="text-sm text-muted hover:text-foreground"
-      >
-        ← Back to project
-      </button>
     </div>
   );
 }

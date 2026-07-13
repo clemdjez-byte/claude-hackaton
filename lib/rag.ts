@@ -8,7 +8,7 @@
 // utilisateur qui vient de réussir (note capturée, protocole figé, run
 // terminé…). On avale l'erreur et on logge un warning côté serveur.
 import { indexEntry, link } from "@/lib/retrieval";
-import type { Db, Evidence, Id, Protocol, Run, Step } from "@/lib/core";
+import type { Db, Evidence, Id, Protocol } from "@/lib/core";
 import { WS } from "@/lib/session";
 
 async function safeguard(label: string, run: () => Promise<unknown>): Promise<void> {
@@ -22,16 +22,16 @@ async function safeguard(label: string, run: () => Promise<unknown>): Promise<vo
 function evidenceText(e: Evidence): string {
   switch (e.kind) {
     case "note":
-      return e.body ?? "Note vide.";
+      return e.body ?? "Empty note.";
     case "measurement":
-      return e.body ?? (e.measurement ? `${e.measurement.value} ${e.measurement.unit}` : "Mesure.");
+      return e.body ?? (e.measurement ? `${e.measurement.value} ${e.measurement.unit}` : "Measurement.");
     case "deviation":
-      if (!e.deviation) return "Déviation.";
-      return `Déviation (${e.deviation.severity}) : prévu « ${e.deviation.expected} », réalisé « ${e.deviation.actual} »${e.deviation.reason ? ` — ${e.deviation.reason}` : ""}.`;
+      if (!e.deviation) return "Deviation.";
+      return `Deviation (${e.deviation.severity}): planned "${e.deviation.expected}", actual "${e.deviation.actual}"${e.deviation.reason ? ` — ${e.deviation.reason}` : ""}.`;
     case "photo":
-      return `Photo${e.body ? ` : ${e.body}` : "."}`;
+      return `Photo${e.body ? `: ${e.body}` : "."}`;
     case "data":
-      return `Fichier de données${e.body ? ` : ${e.body}` : "."}`;
+      return `Data file${e.body ? `: ${e.body}` : "."}`;
     default:
       return e.body ?? "";
   }
@@ -70,32 +70,9 @@ export async function indexProtocol(db: Db, p: Protocol): Promise<void> {
   );
 }
 
-/** Indexe un run terminé : titre du protocole, résumé des étapes, période. */
-export async function indexRun(
-  db: Db,
-  run: Run,
-  protocolTitle: string,
-  steps: Step[]
-): Promise<void> {
-  await safeguard("run", () => {
-    const done = steps.filter((s) => s.status === "done").length;
-    const skipped = steps.filter((s) => s.status === "skipped").length;
-    const text = [
-      `Run de « ${protocolTitle} » — ${run.status}.`,
-      `${done}/${steps.length} étapes faites, ${skipped} sautée(s).`,
-      `Période : ${run.startedAt} → ${run.endedAt ?? "en cours"}.`,
-    ].join("\n");
-    return indexEntry(db, {
-      ws: WS,
-      sourceType: "run",
-      sourceId: run.id,
-      text,
-      meta: { protocolId: run.protocolId, status: run.status },
-    });
-  });
-}
-
-/** Indexe un rapport généré. `text` = markdown du rapport (exportReportMarkdown). */
+/** Indexe un rapport généré. `text` = markdown du rapport (exportReportMarkdown).
+ *  C'est le compte-rendu riche d'un run : c'est LUI qu'on indexe pour le RAG
+ *  (le résumé maigre du run — statut, période — n'apportait rien à la recherche). */
 export async function indexReport(
   db: Db,
   report: { id: Id; runId: Id },

@@ -6,7 +6,7 @@
 export * from "./types";
 
 // Calcul déterministe.
-export { round, convert, scaleMasterMix, dilution } from "./calc";
+export { round, convert, scaleMasterMix, dilution, molarity, describe } from "./calc";
 
 // Interrupteurs internes.
 export { FLAGS, isEnabled, assertEnabled, FeatureDisabledError } from "./flags";

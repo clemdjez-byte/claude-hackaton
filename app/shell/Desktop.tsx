@@ -14,6 +14,7 @@ import { Clock } from "./Clock";
 import { Galaxy } from "./Galaxy";
 import { ZoomDock } from "./ZoomDock";
 import { GalaxyControlContext, type GalaxyMode, type FocusSource, type FocusRequest } from "./GalaxyControlContext";
+import { ChatComposerContext, type PendingChat } from "@/app/chat/ChatComposerContext";
 
 // Prénom affiché dans le greeting. En dur pour l'instant (mono-utilisateur) —
 // à brancher sur la session quand l'auth existera.
@@ -21,7 +22,7 @@ const USER_NAME = "Clément";
 
 export function Desktop() {
   const api = useWindows();
-  const { windows, activeId, setLayout } = api;
+  const { windows, activeId, setLayout, open } = api;
   const [docCount, setDocCount] = useState<number | null>(null);
   const onGraphLoad = useCallback((n: number) => setDocCount(n), []);
   const [galaxyMode, setGalaxyMode] = useState<GalaxyMode>("ragkg");
@@ -36,6 +37,25 @@ export function Desktop() {
   const galaxyControl = useMemo(
     () => ({ mode: galaxyMode, setMode: setGalaxyMode, focus: galaxyFocus, setFocus }),
     [galaxyMode, galaxyFocus, setFocus]
+  );
+
+  // Composeur : la barre du bureau laisse taper une question (et épingler un
+  // outil) SANS ouvrir l'assistant ; à la validation, on dépose la question et on
+  // ouvre la fenêtre de chat qui la consomme.
+  const [pending, setPending] = useState<PendingChat | null>(null);
+  const composerToken = useRef(0);
+  const submitComposer = useCallback(
+    (text: string, tool: string | null) => {
+      composerToken.current += 1;
+      setPending({ text, tool, token: composerToken.current });
+      open("chat");
+    },
+    [open]
+  );
+  const consumeComposer = useCallback(() => setPending(null), []);
+  const composer = useMemo(
+    () => ({ pending, submit: submitComposer, consume: consumeComposer }),
+    [pending, submitComposer, consumeComposer]
   );
 
   // Pile des fenêtres réduites (bas droite), déployée en éventail au survol.
@@ -83,6 +103,7 @@ export function Desktop() {
   return (
     <WindowsContext.Provider value={api}>
       <GalaxyControlContext.Provider value={galaxyControl}>
+      <ChatComposerContext.Provider value={composer}>
       <div className="desktop">
         <Galaxy onLoad={onGraphLoad} mode={galaxyMode} />
 
@@ -126,6 +147,7 @@ export function Desktop() {
           </Window>
         ))}
       </div>
+      </ChatComposerContext.Provider>
       </GalaxyControlContext.Provider>
     </WindowsContext.Provider>
   );

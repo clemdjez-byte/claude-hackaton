@@ -21,10 +21,11 @@ import {
   captureMeasurement,
   completeRun,
   generateReport,
+  exportReportMarkdown,
 } from "@/lib/bench";
 import type { Db, Verdict } from "@/lib/core";
 import { getBenchSession, WS, OPERATOR } from "@/lib/session";
-import { indexProtocol, indexRun } from "@/lib/rag";
+import { indexProtocol, indexReport } from "@/lib/rag";
 import { saveOutcome } from "@/lib/retrieval/knowledge-graph/outcome";
 import { indexProtocolGraph, indexRunGraph } from "@/lib/kg";
 
@@ -182,10 +183,11 @@ export async function seedKnowledgeGraph(store: Db): Promise<void> {
     for (const note of spec.notes) await captureNote(store, run.id, undefined, note, OPERATOR);
     if (spec.metric) await captureMeasurement(store, run.id, undefined, spec.metric, OPERATOR);
     const completed = await completeRun(store, run.id);
-    await generateReport(store, run.id); // rapport (repli déterministe hors-ligne si pas de clé)
+    const report = await generateReport(store, run.id); // rapport (repli déterministe hors-ligne si pas de clé)
     // Enregistre le verdict (source empirique) ; indexRunGraph le RÉUTILISE ensuite.
     await saveOutcome(store, { ws, runId: run.id, verdict: spec.verdict, metric: spec.metric, reason: spec.reason });
-    await indexRun(store, completed, staining.title, steps); // RAG (ancrage chat)
+    // RAG : on indexe le RAPPORT (le compte-rendu riche du run), pas le résumé maigre du run.
+    await indexReport(store, report, await exportReportMarkdown(store, run.id));
     await indexRunGraph(store, completed, steps, staining); // extraction IA du run (chiffré + ouvert)
     n += 1;
   }
@@ -213,9 +215,9 @@ export async function seedKnowledgeGraph(store: Db): Promise<void> {
     OPERATOR
   );
   const eCompleted = await completeRun(store, eRun.id);
-  await generateReport(store, eRun.id);
+  const eReport = await generateReport(store, eRun.id);
   await saveOutcome(store, { ws, runId: eRun.id, verdict: "failure", reason: "confluence" });
-  await indexRun(store, eCompleted, expansion.title, eSteps);
+  await indexReport(store, eReport, await exportReportMarkdown(store, eRun.id));
   await indexRunGraph(store, eCompleted, eSteps, expansion);
   console.log(`✓ Protocole publié : « ${expansion.title} » + 1 run (croisement cell_density)`);
 }

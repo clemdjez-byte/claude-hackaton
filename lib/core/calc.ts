@@ -90,6 +90,62 @@ export function scaleMasterMix(recipe: Recipe, n: number, overagePct: number): R
 }
 
 /**
+ * Solveur masse ↔ concentration ↔ volume via la masse molaire (m = C·V·MW).
+ * Le seul pont que `convert` ne fait pas seul (change de dimension). On résout la
+ * variable `solve` à partir des deux autres. Rendu dans une unité usuelle au bench
+ * (mg / mM / mL). Les unités d'entrée sont libres (homogénéisées via `convert`).
+ */
+export function molarity(args: {
+  molarMass: number; // g/mol
+  solve: "mass" | "concentration" | "volume";
+  mass?: Quantity;
+  concentration?: Quantity;
+  volume?: Quantity;
+}): Quantity {
+  const { molarMass, solve, mass, concentration, volume } = args;
+  if (!(molarMass > 0)) throw new Error("Masse molaire doit être > 0");
+  if (solve === "mass") {
+    if (!concentration || !volume) throw new Error("concentration et volume requis");
+    const mol = convert(concentration, "M").value * convert(volume, "L").value;
+    return { value: round(mol * molarMass * 1000, 4), unit: "mg" }; // g → mg
+  }
+  if (solve === "concentration") {
+    if (!mass || !volume) throw new Error("mass et volume requis");
+    const mol = convert(mass, "g").value / molarMass;
+    const molar = mol / convert(volume, "L").value; // mol/L = M
+    return { value: round(molar * 1000, 4), unit: "mM" }; // M → mM
+  }
+  // solve === "volume"
+  if (!mass || !concentration) throw new Error("mass et concentration requis");
+  const mol = convert(mass, "g").value / molarMass;
+  const liters = mol / convert(concentration, "M").value;
+  return { value: round(liters * 1000, 4), unit: "mL" }; // L → mL
+}
+
+/** Statistiques descriptives déterministes (écart-type = ÉCHANTILLON, n-1).
+ *  Renvoie null si aucune valeur finie. Le modèle lit ces nombres, il ne les
+ *  calcule jamais. */
+export function describe(
+  values: number[]
+): { n: number; mean: number; median: number; sd: number; min: number; max: number } | null {
+  const v = values.filter((x) => Number.isFinite(x));
+  if (v.length === 0) return null;
+  const n = v.length;
+  const sorted = [...v].sort((a, b) => a - b);
+  const mean = v.reduce((s, x) => s + x, 0) / n;
+  const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+  const variance = n > 1 ? v.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1) : 0;
+  return {
+    n,
+    mean: round(mean, 4),
+    median: round(median, 4),
+    sd: round(Math.sqrt(variance), 4),
+    min: sorted[0],
+    max: sorted[n - 1],
+  };
+}
+
+/**
  * Dilution C1·V1 = C2·V2. Donne le volume de solution mère et de diluant
  * pour atteindre `finalConc` dans `finalVolume`.
  */

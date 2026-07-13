@@ -73,14 +73,20 @@ function hexToRgba(hex: string, a: number): string {
 const lerpVec = (a: Vec3, b: Vec3, e: number): Vec3 => [a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e, a[2] + (b[2] - a[2]) * e];
 
 export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; mode: GalaxyMode }) {
-  const { open } = useWindowsContext();
+  const { open, windows, activeId } = useWindowsContext();
   const { focus } = useGalaxyControl();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<GalaxyResponse | null>(null);
 
+  // L'illumination n'est effective que si la fenêtre « Ask your lab » est au
+  // premier plan : dès qu'une autre fenêtre est active, la galaxie revient à sa
+  // vue de base (pas de mise en valeur).
+  const chatActive = windows.some((w) => w.id === activeId && w.kind === "chat");
+
   const modeRef = useRef<GalaxyMode>(mode);
   const openRef = useRef(open);
   const focusRef = useRef<FocusRequest | null>(focus);
+  const chatActiveRef = useRef(chatActive);
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
@@ -90,6 +96,9 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
   useEffect(() => {
     focusRef.current = focus;
   }, [focus]);
+  useEffect(() => {
+    chatActiveRef.current = chatActive;
+  }, [chatActive]);
 
   // Fetch une fois au montage — décoratif : un échec laisse la galaxie vide.
   useEffect(() => {
@@ -172,7 +181,6 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
     const nodeIndexById = new Map(nodes.map((n, i) => [n.id, i]));
     let docIds = new Set<string>();
     let entityIds = new Set<string>();
-    let hasFocus = false;
     let yawTarget = 0;
     let lastFocusToken = focusRef.current?.token ?? -1; // ne pas rejouer un focus déjà présent au montage
 
@@ -251,7 +259,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
         edgeAlpha = edgeFrom + (edgeTo - edgeFrom) * e;
       }
 
-      // Nouvelle demande de focus du chat ? Résous les cibles + vise la caméra.
+      // Nouvelle demande de focus du chat ? Résous les cibles + calcule le cap caméra.
       const fReq = focusRef.current;
       if ((fReq?.token ?? -1) !== lastFocusToken) {
         lastFocusToken = fReq?.token ?? -1;
@@ -263,8 +271,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
           docIds = new Set();
           entityIds = new Set();
         }
-        hasFocus = docIds.size + entityIds.size > 0;
-        if (hasFocus) {
+        if (docIds.size + entityIds.size > 0) {
           // La caméra vise les documents en priorité (les entités KG gravitent autour).
           const aim = docIds.size ? docIds : entityIds;
           let bx = 0, bz = 0, cnt = 0;
@@ -275,18 +282,20 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
             bz += basePos[i][2];
             cnt++;
           }
-          if (cnt > 0) {
-            yawTarget = -Math.atan2(bx / cnt, bz / cnt); // amène le barycentre face à l'écran
-            autoRotate = false;
-          }
+          if (cnt > 0) yawTarget = -Math.atan2(bx / cnt, bz / cnt); // barycentre face à l'écran
         }
       }
 
-      if (autoRotate && !isDragging && !hovered) yaw += AUTO_SPEED * (dt / 16.67);
-      else if (hasFocus && !isDragging) {
+      // Illumination effective SEULEMENT quand « Ask your lab » est au premier plan.
+      // Sinon la galaxie reste en vue de base et reprend sa rotation.
+      const showFocus = chatActiveRef.current && docIds.size + entityIds.size > 0;
+
+      if (showFocus && !isDragging) {
         let d = yawTarget - yaw;
         d = Math.atan2(Math.sin(d), Math.cos(d)); // plus court chemin angulaire
         yaw += d * 0.08;
+      } else if (autoRotate && !isDragging && !hovered) {
+        yaw += AUTO_SPEED * (dt / 16.67);
       }
 
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -299,7 +308,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
       // étant vert, elles se lisent en teintes de vert), modulé par profondeur et
       // reveal.
       if (edgeAlpha > 0.001) {
-        const lit = (id: string) => hasFocus && (docIds.has(id) || entityIds.has(id));
+        const lit = (id: string) => showFocus && (docIds.has(id) || entityIds.has(id));
         // Passe 1 : arêtes normales (en dégradé), estompées si un focus est actif.
         // On saute celles du sous-graphe illuminé : elles sont tracées en jaune juste après.
         ctx!.lineWidth = 1.1;
@@ -311,7 +320,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
           if (rv < 0.02) continue;
           if (lit(a.n.id) && lit(b.n.id)) continue; // → passe 2 (jaune)
           const tAvg = (a.t + b.t) / 2;
-          const dim = hasFocus ? 0.22 : 1; // fond en retrait quand le projecteur est allumé
+          const dim = showFocus ? 0.22 : 1; // fond en retrait quand le projecteur est allumé
           const alpha = edgeAlpha * rv * 0.3 * (0.45 + 0.55 * tAvg) * dim;
           const grad = ctx!.createLinearGradient(a.px, a.py, b.px, b.py);
           grad.addColorStop(0, hexToRgba(colorFor(a.n), alpha));
@@ -323,7 +332,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
           ctx!.stroke();
         }
         // Passe 2 : arêtes reliant deux nœuds allumés → jaune brillant, par-dessus.
-        if (hasFocus) {
+        if (showFocus) {
           ctx!.lineWidth = 1.7;
           for (const e of data!.edges) {
             const a = byId.get(e.from);
@@ -349,13 +358,13 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
         const rv = reveal[p.i];
         if (rv < 0.02) continue;
         const isHovered = hovered?.id === p.n.id;
-        const isDocT = hasFocus && docIds.has(p.n.id); // document cité (halo fort)
-        const isEntT = hasFocus && entityIds.has(p.n.id); // entité KG mobilisée (halo doux)
+        const isDocT = showFocus && docIds.has(p.n.id); // document cité (halo fort)
+        const isEntT = showFocus && entityIds.has(p.n.id); // entité KG mobilisée (halo doux)
         const targeted = isDocT || isEntT;
         const boost = isDocT ? 1.5 : isEntT ? 1.25 : 1;
         const r = radiusFor(p.n) * (0.6 + 0.8 * p.t) * (isHovered ? 1.6 : 1) * boost;
         let alpha = (0.4 + 0.5 * p.t) * rv;
-        if (hasFocus && !targeted) alpha *= 0.28; // estompe le reste
+        if (showFocus && !targeted) alpha *= 0.28; // estompe le reste
         if (isHovered) alpha = Math.min(1, alpha + 0.25);
         if (targeted) alpha = 1; // un nœud allumé brille à pleine opacité
         // Un nœud allumé change de couleur (jaune brillant) au lieu de sa teinte.
@@ -378,7 +387,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
 
       // Labels permanents des documents cités (les entités KG restent sans label
       // pour ne pas surcharger — leur halo suffit à les faire ressortir).
-      if (hasFocus) {
+      if (showFocus) {
         ctx!.font = "500 12px system-ui, sans-serif";
         ctx!.fillStyle = labelColor;
         for (const p of ordered) {

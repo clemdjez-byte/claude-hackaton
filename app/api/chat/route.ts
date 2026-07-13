@@ -8,8 +8,7 @@ import { streamText, stepCountIs, type ModelMessage } from "ai";
 import { search } from "@/lib/retrieval";
 import type { MemoryHit } from "@/lib/core";
 import { getBenchSession, WS } from "@/lib/session";
-import { collectGraphFacts, renderGraphFacts, collectGenericFacts, renderGenericFacts, loadLabels } from "@/lib/retrieval/knowledge-graph/query";
-import { NODE, type KgNode } from "@/lib/retrieval/knowledge-graph/ontology";
+import { collectGraphBlock, hitsToAnchors } from "@/lib/retrieval/knowledge-graph/query";
 import { buildChatTools } from "@/lib/chat/tools";
 import { deriveSourceLabel } from "@/app/chat/sourceLabel";
 
@@ -30,37 +29,18 @@ function isChatMessage(m: unknown): m is ChatMessage {
   );
 }
 
-/** Mappe les hits du RAG (mémoire) en nœuds d'ancrage du graphe. Runs et
- *  protocoles sont des ancres directes ; un hit rapport/preuve est rattaché à
- *  SON run (via meta.runId), pour élargir les points d'entrée de traversée. Les
- *  ancres run/protocole suffisent : les nœuds ouverts (instrument, opérateur…)
- *  y sont reliés par l'indexation (voir resolve.ts), donc atteignables en BFS. */
-export function hitsToAnchors(
-  hits: Array<{ sourceType: string; sourceId: string; meta?: Record<string, unknown> }>
-): KgNode[] {
-  const anchors: KgNode[] = [];
-  const seen = new Set<string>();
-  const add = (node: KgNode) => {
-    const k = `${node.type}:${node.id}`;
-    if (!seen.has(k)) { seen.add(k); anchors.push(node); }
-  };
-  for (const h of hits) {
-    if (h.sourceType === "run") add(NODE.run(h.sourceId));
-    else if (h.sourceType === "protocol") add(NODE.protocol(h.sourceId));
-    else if ((h.sourceType === "report" || h.sourceType === "evidence") && typeof h.meta?.runId === "string") {
-      add(NODE.run(h.meta.runId as string));
-    }
-  }
-  return anchors;
-}
-
 /** Bloc contexte : une ligne « [type:id] texte » par hit, tronquée. */
-function buildSystemPrompt(hits: MemoryHit[], graphBlock: string): string {
+function buildSystemPrompt(hits: MemoryHit[], graphBlock: string, forcedTool?: string): string {
   const context = hits.length
     ? hits.map((h) => `[${h.sourceType}:${h.sourceId}] ${h.text.slice(0, MAX_HIT_CHARS)}`).join("\n\n")
     : "(No relevant lab memory found for this question.)";
 
-  return `You are the Octopus lab copilot for Bench, the wet-lab notebook. You answer questions about THIS lab's work using ONLY the context below.
+  // Activation manuelle : l'utilisateur a choisi un outil précis dans le menu Tools.
+  const forcedLine = forcedTool
+    ? `\n\nIMPORTANT: The user has EXPLICITLY selected the \`${forcedTool}\` tool for this request. Use it as your primary action (call it), then explain the result in plain language. If it needs an input the user did not provide, ask ONE short clarifying question instead of guessing.`
+    : "";
+
+  return `You are the Octopus lab copilot for Bench, the wet-lab notebook. You answer questions about THIS lab's work using ONLY the context below.${forcedLine}
 
 You are given TWO context blocks (already retrieved for this question):
 - GRAPH FACTS: structured facts derived from this lab's runs. Two kinds: (1) quantitative lines (parameters, verdicts, documented failure modes with thresholds) — prefer these for any quantitative or aggregate claim (e.g. "3 of 4 failures violated a documented threshold"); (2) open triples of the form [type:id] "label" —relation→ [type:id] extracted from lab notes (e.g. which instrument, operator, sample or date a run involved). Use the triples for factual "which/who/what" questions.
@@ -98,14 +78,30 @@ function summarizeToolResult(name: string, output: unknown): Record<string, unkn
   switch (name) {
     case "scale_recipe":
       return o; // { ok, protocolTitle, recipe } — le client rend le tableau.
+    // Calcul : petit résultat, on le renvoie tel quel (affichable inline).
+    case "dilute":
+    case "convert_units":
+    case "molarity_calc":
+      return o;
     case "read_report":
       return { runId: o.runId, chars: typeof o.markdown === "string" ? o.markdown.length : 0 };
     case "traverse_graph":
       return { nodeCount: o.nodeCount ?? 0, edgeCount: o.edgeCount ?? 0 };
     case "search_memory":
       return { count: Array.isArray(o.results) ? o.results.length : 0 };
+    case "compare_runs":
+      return { runs: Array.isArray(o.runs) ? o.runs.length : 0, differingParams: o.differingParams ?? [] };
+    case "check_parameter_risk":
+      return { safe: o.safe, violations: Array.isArray(o.violations) ? o.violations.length : 0 };
+    case "cross_tab_ic50":
+      return { cells: Array.isArray(o.cells) ? o.cells.length : 0, unit: o.unit };
+    case "summarize_metric":
+      return { n: o.n ?? 0, median: o.median, unit: o.unit };
+    case "aggregate_runs":
+      return { groups: Array.isArray(o.groups) ? o.groups.length : 0 };
     case "list_protocols":
     case "list_runs":
+    case "list_measurements":
       return { count: o.count ?? 0 };
     default:
       return {};
@@ -113,7 +109,7 @@ function summarizeToolResult(name: string, output: unknown): Record<string, unkn
 }
 
 export async function POST(req: Request) {
-  let body: { messages?: unknown };
+  let body: { messages?: unknown; forcedTool?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -149,14 +145,8 @@ export async function POST(req: Request) {
         let graphBlock = "(No graph facts for these entities.)";
         try {
           const anchors = hitsToAnchors(hits);
-          const facts = await collectGraphFacts(store, WS, anchors);
-          const generic = await collectGenericFacts(store, WS, anchors);
-          const labels = await loadLabels(store, WS);
-          const parts: string[] = [];
-          if (facts.runs.length) parts.push(renderGraphFacts(facts));
-          const genericStr = renderGenericFacts(generic, labels);
-          if (genericStr) parts.push(genericStr);
-          if (parts.length) graphBlock = parts.join("\n");
+          const { graphBlock: gb, facts, generic, labels } = await collectGraphBlock(store, WS, anchors);
+          if (gb) graphBlock = gb; // garde le repli « (No graph facts…) » si vide
           // On envoie les triplets ouverts EUX-MÊMES (pas seulement leur nombre)
           // + les labels : le client dessine ainsi le sous-graphe mobilisé.
           send({ type: "graph", facts, triples: generic, labels: Object.fromEntries(labels) });
@@ -175,13 +165,19 @@ export async function POST(req: Request) {
           })),
         });
 
+        const tools = buildChatTools({ db: store, ws: WS });
+        // Activation manuelle depuis le menu Tools : on ne guide l'agent que si le
+        // nom envoyé correspond à un outil réel (sinon on ignore silencieusement).
+        const forcedTool =
+          typeof body.forcedTool === "string" && body.forcedTool in tools ? body.forcedTool : undefined;
+
         const result = streamText({
           model: anthropic("claude-sonnet-5"),
-          system: buildSystemPrompt(hits, graphBlock),
+          system: buildSystemPrompt(hits, graphBlock, forcedTool),
           messages: messages.map((m): ModelMessage => ({ role: m.role, content: m.content })),
           // L'agent peut approfondir en appelant des outils (lecture seule).
           // stepCountIs borne le nombre de tours pour ne pas boucler.
-          tools: buildChatTools({ db: store, ws: WS }),
+          tools,
           stopWhen: stepCountIs(6),
         });
         let producedText = false;
