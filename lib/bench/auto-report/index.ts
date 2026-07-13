@@ -54,7 +54,7 @@ interface ReportFacts {
 const NarrativeSchema = z.object({
   interpretation: z
     .string()
-    .describe("interprétation prudente et étiquetée ; ne t'appuie que sur les faits fournis ; n'invente AUCUN chiffre"),
+    .describe("cautious, clearly-labeled interpretation; rely only on the facts provided; invent NO number"),
   openQuestions: z.array(z.string()),
   nextActions: z.array(z.string()),
 });
@@ -93,7 +93,7 @@ export async function generateReport(db: Db, runId: Id): Promise<StoredReport> {
   const page = await db.insertPage({
     ws: ctx.run.ws,
     type: "report",
-    title: `Rapport: ${protocolTitle}`,
+    title: `Report: ${protocolTitle}`,
     content: pageContent,
   });
   return toStored(page);
@@ -123,15 +123,15 @@ function buildPlanned(ctx: RunContext): string {
   const lines: string[] = [];
   const n = ctx.run.scalingContext.n_reactions ?? "?";
   const over = ctx.run.scalingContext.overage_pct ?? "?";
-  lines.push(`${ctx.protocol.steps.length} étapes prévues, protocole figé v${ctx.protocol.version}.`);
+  lines.push(`${ctx.protocol.steps.length} steps planned, protocol frozen at v${ctx.protocol.version}.`);
   if (ctx.scaledRecipe) {
     lines.push(
-      `Master mix pour ${n} réactions (excès ${over} %), valeurs calculées par code déterministe :`
+      `Master mix for ${n} reactions (overage ${over} %), values computed by deterministic code:`
     );
     for (const c of ctx.scaledRecipe.components.filter((x) => x.shared)) {
-      lines.push(`  · ${c.name} : ${c.total.value} ${c.total.unit}`);
+      lines.push(`  · ${c.name}: ${c.total.value} ${c.total.unit}`);
     }
-    lines.push(`  · Total mix partagé : ${ctx.scaledRecipe.sharedTotal.value} ${ctx.scaledRecipe.sharedTotal.unit} (réserve morte ${ctx.scaledRecipe.deadVolume.value} ${ctx.scaledRecipe.deadVolume.unit}).`);
+    lines.push(`  · Shared mix total: ${ctx.scaledRecipe.sharedTotal.value} ${ctx.scaledRecipe.sharedTotal.unit} (dead volume ${ctx.scaledRecipe.deadVolume.value} ${ctx.scaledRecipe.deadVolume.unit}).`);
   }
   return lines.join("\n");
 }
@@ -141,13 +141,13 @@ function buildPerformed(ctx: RunContext, evidence: Evidence[]): string {
   for (const s of ctx.steps) {
     const dur = stepDurationMin(s.startedAt, s.completedAt);
     const durTxt = dur != null ? ` (${dur} min)` : "";
-    lines.push(`Étape ${s.protocolStepIndex + 1} « ${s.title} » : ${statusFr(s.status)}${durTxt}.`);
+    lines.push(`Step ${s.protocolStepIndex + 1} "${s.title}": ${statusLabel(s.status)}${durTxt}.`);
   }
   const measurements = evidence.filter((e) => e.kind === "measurement");
   if (measurements.length) {
-    lines.push("Mesures relevées :");
+    lines.push("Measurements recorded:");
     for (const m of measurements)
-      lines.push(`  · ${m.body ?? "mesure"} = ${m.measurement?.value} ${m.measurement?.unit} [${m.id}]`);
+      lines.push(`  · ${m.body ?? "measurement"} = ${m.measurement?.value} ${m.measurement?.unit} [${m.id}]`);
   }
   return lines.join("\n");
 }
@@ -157,11 +157,11 @@ function buildObserved(evidence: Evidence[]): string {
   const photos = evidence.filter((e) => e.kind === "photo");
   const dataFiles = evidence.filter((e) => e.kind === "data");
   const lines: string[] = [];
-  for (const nn of notes) lines.push(`Note : ${nn.body} [${nn.id}]`);
+  for (const nn of notes) lines.push(`Note: ${nn.body} [${nn.id}]`);
   for (const p of photos) lines.push(`Photo${p.body ? ` (${p.body})` : ""} [${p.id}]`);
   for (const d of dataFiles)
-    lines.push(`Fichier de données : ${d.source?.label ?? d.body ?? "fichier"} [${d.id}]`);
-  if (lines.length === 0) lines.push("Aucune observation qualitative enregistrée.");
+    lines.push(`Data file: ${d.source?.label ?? d.body ?? "file"} [${d.id}]`);
+  if (lines.length === 0) lines.push("No qualitative observation recorded.");
   return lines.join("\n");
 }
 
@@ -171,7 +171,7 @@ function buildDeviations(evidence: Evidence[]): string[] {
     .map((e) => {
       const d = e.deviation!;
       const reason = d.reason ? ` (${d.reason})` : "";
-      return `[${severityFr(d.severity)}] prévu « ${d.expected} », réalisé « ${d.actual} »${reason} [${e.id}]`;
+      return `[${severityLabel(d.severity)}] planned "${d.expected}", actual "${d.actual}"${reason} [${e.id}]`;
     });
 }
 
@@ -194,42 +194,42 @@ async function buildNarrative(args: {
   // mais aussi si l'appel LLM échoue (clé invalide, réseau, quota…) — un
   // rapport sans interprétation rédigée vaut mieux que pas de rapport.
   const fallback = (): z.infer<typeof NarrativeSchema> => {
-    const crit = deviations.filter((d) => d.startsWith("[critique")).length;
+    const crit = deviations.filter((d) => d.startsWith("[critical")).length;
     return {
       interpretation:
         deviations.length === 0
-          ? "Aucune déviation enregistrée. Résultats à valider par l'opérateur (interprétation automatique, non-experte)."
-          : `${deviations.length} déviation(s) enregistrée(s)${crit ? `, dont ${crit} critique(s)` : ""}. À examiner avant toute conclusion. (Interprétation automatique, à valider.)`,
+          ? "No deviation recorded. Results to be validated by the operator (automatic, non-expert interpretation)."
+          : `${deviations.length} deviation(s) recorded${crit ? `, including ${crit} critical` : ""}. Review before drawing any conclusion. (Automatic interpretation, to be validated.)`,
       openQuestions:
         deviations.length > 0
-          ? ["Les déviations critiques compromettent-elles la quantification ?"]
-          : ["Les contrôles (NTC, réplicats) sont-ils conformes ?"],
-      nextActions: ["Valider le rapport", "Vérifier les contrôles qualité (NTC, melt curve, réplicats)"],
+          ? ["Do the critical deviations compromise quantification?"]
+          : ["Are the controls (NTC, replicates) within spec?"],
+      nextActions: ["Validate the report", "Check quality controls (NTC, melt curve, replicates)"],
     };
   };
   if (!hasLlmKey()) return fallback();
   try {
     return await generateObjectFor("report", {
-      system: `Tu rédiges l'INTERPRÉTATION d'un run de laboratoire, en français, ton de chercheur senior.
-Règles absolues :
-- Ne t'appuie que sur les FAITS fournis ci-dessous. N'invente AUCUN chiffre, aucune mesure, aucune source.
-- Étiquette clairement qu'il s'agit d'une interprétation à valider par un humain.
-- Sois prudent et concis. Distingue observation et hypothèse.`,
-      prompt: `FAITS DU RUN :
+      system: `You write the INTERPRETATION of a laboratory run, in English, in the tone of a senior researcher.
+Absolute rules:
+- Rely only on the FACTS provided below. Invent NO number, no measurement, no source.
+- Clearly label this as an interpretation to be validated by a human.
+- Be cautious and concise. Distinguish observation from hypothesis.`,
+      prompt: `RUN FACTS:
 
-## Prévu
+## Planned
 ${planned}
 
-## Réellement fait
+## Performed
 ${performed}
 
-## Observé
+## Observed
 ${observed}
 
-## Déviations
-${deviations.length ? deviations.join("\n") : "aucune"}
+## Deviations
+${deviations.length ? deviations.join("\n") : "none"}
 
-Produis: interpretation (prose), openQuestions (questions ouvertes), nextActions (prochaines actions).`,
+Produce: interpretation (prose), openQuestions, nextActions.`,
       schema: NarrativeSchema,
     });
   } catch {
@@ -260,7 +260,7 @@ function listHtml(items: string[], empty: string): string {
 }
 
 function citationsHtml(citations: Citation[]): string {
-  if (citations.length === 0) return "<p>Aucune.</p>";
+  if (citations.length === 0) return "<p>None.</p>";
   return `<ul>${citations
     .map((ci) => `<li>« ${escapeHtml(ci.claim)} » → ${escapeHtml(ci.evidenceIds.join(", "))}</li>`)
     .join("")}</ul>`;
@@ -273,18 +273,18 @@ function sectionHtml(title: string, bodyHtml: string): string {
 /** Même contenu que l'ancien renderMarkdown, mais en HTML éditable (Tiptap). */
 function renderHtml(meta: { protocolTitle: string; generatedAt: string; runId: Id }, f: ReportFacts): string {
   return [
-    `<h1>Rapport: ${escapeHtml(meta.protocolTitle)}</h1>`,
-    `<p><em>Généré le ${escapeHtml(meta.generatedAt)} · run ${escapeHtml(meta.runId)}</em></p>`,
-    `<blockquote><p>Prévu / réellement fait / observé / interprété. Chaque observation est sourcée.</p></blockquote>`,
-    sectionHtml("Objectif", textBlockHtml(f.objective)),
-    sectionHtml("Prévu", textBlockHtml(f.planned)),
-    sectionHtml("Réellement fait", textBlockHtml(f.performed)),
-    sectionHtml("Observé", textBlockHtml(f.observed)),
-    sectionHtml("Déviations", listHtml(f.deviations, "Aucune.")),
-    sectionHtml("Interprétation (à valider)", textBlockHtml(f.interpretation)),
-    sectionHtml("Questions ouvertes", listHtml(f.openQuestions, "Aucune.")),
-    sectionHtml("Prochaines actions", listHtml(f.nextActions, "Aucune.")),
-    sectionHtml("Annexe: citations", citationsHtml(f.citations)),
+    `<h1>Report: ${escapeHtml(meta.protocolTitle)}</h1>`,
+    `<p><em>Generated ${escapeHtml(meta.generatedAt)} · run ${escapeHtml(meta.runId)}</em></p>`,
+    `<blockquote><p>Planned / performed / observed / interpreted. Every observation is cited.</p></blockquote>`,
+    sectionHtml("Objective", textBlockHtml(f.objective)),
+    sectionHtml("Planned", textBlockHtml(f.planned)),
+    sectionHtml("Performed", textBlockHtml(f.performed)),
+    sectionHtml("Observed", textBlockHtml(f.observed)),
+    sectionHtml("Deviations", listHtml(f.deviations, "None.")),
+    sectionHtml("Interpretation (to be validated)", textBlockHtml(f.interpretation)),
+    sectionHtml("Open questions", listHtml(f.openQuestions, "None.")),
+    sectionHtml("Next actions", listHtml(f.nextActions, "None.")),
+    sectionHtml("Appendix: citations", citationsHtml(f.citations)),
   ].join("\n");
 }
 
@@ -329,16 +329,16 @@ function stepDurationMin(start?: string, end?: string): number | null {
   const ms = new Date(end).getTime() - new Date(start).getTime();
   return Math.round((ms / 60000) * 10) / 10;
 }
-function statusFr(s: string): string {
-  return { pending: "en attente", active: "en cours", done: "faite", skipped: "sautée" }[s] ?? s;
+function statusLabel(s: string): string {
+  return { pending: "pending", active: "in progress", done: "done", skipped: "skipped" }[s] ?? s;
 }
-function severityFr(s: string): string {
-  return { minor: "mineure", major: "majeure", critical: "critique" }[s] ?? s;
+function severityLabel(s: string): string {
+  return { minor: "minor", major: "major", critical: "critical" }[s] ?? s;
 }
 function claimForEvidence(e: Evidence): string {
-  if (e.kind === "deviation" && e.deviation) return `déviation : ${e.deviation.actual}`;
-  if (e.kind === "measurement" && e.measurement) return `${e.body ?? "mesure"} = ${e.measurement.value} ${e.measurement.unit}`;
+  if (e.kind === "deviation" && e.deviation) return `deviation: ${e.deviation.actual}`;
+  if (e.kind === "measurement" && e.measurement) return `${e.body ?? "measurement"} = ${e.measurement.value} ${e.measurement.unit}`;
   if (e.kind === "photo") return e.body ?? "photo";
-  if (e.kind === "data") return `fichier de données : ${e.source?.label ?? e.body ?? "fichier"}`;
+  if (e.kind === "data") return `data file: ${e.source?.label ?? e.body ?? "file"}`;
   return e.body ?? "note";
 }

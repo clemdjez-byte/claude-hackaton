@@ -51,7 +51,7 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const d = createDb(":memory:");
     const runId = await runWithEvidence(d);
     const report = await generateReport(d, runId);
-    expect(report.html).toContain("critique");
+    expect(report.html).toContain("critical");
     expect(report.html).toContain("55 °C");
     // 3 evidences capturées → 3 ids cités dans l'annexe citations du document.
     const citedIds = new Set(report.html.match(/ev_[A-Za-z0-9]+/g));
@@ -66,10 +66,10 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const again = await getReport(d, runId);
     expect(again).not.toBeNull();
     expect(again!.html).toContain("SYBR protégé");
-    expect(again!.html.toLowerCase()).toContain("valider");
+    expect(again!.html.toLowerCase()).toContain("validated");
     const md = await exportReportMarkdown(d, runId);
-    expect(md).toContain("# Rapport");
-    expect(md).toContain("Réellement fait");
+    expect(md).toContain("# Report");
+    expect(md).toContain("Performed");
     d.close();
   });
 
@@ -89,8 +89,8 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const d = createDb(":memory:");
     const runId = await runWithEvidence(d);
     const report = await generateReport(d, runId); // ne doit PAS jeter
-    expect(report.html).toContain("Interprétation");
-    expect(report.html.toLowerCase()).toContain("valider");
+    expect(report.html).toContain("Interpretation");
+    expect(report.html.toLowerCase()).toContain("validated");
     d.close();
   });
 
@@ -99,7 +99,7 @@ describe("Auto Report (repli déterministe, sans LLM)", () => {
     const runId = await runWithEvidence(d);
     const md = await exportReportMarkdown(d, runId); // pas de generateReport préalable
     expect(md.length).toBeGreaterThan(0);
-    expect(md).toContain("# Rapport");
+    expect(md).toContain("# Report");
     d.close();
   });
 });

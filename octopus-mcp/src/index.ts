@@ -39,18 +39,38 @@ function openDb() {
   return new Database(DB_PATH, { readonly: true, fileMustExist: true });
 }
 
+/** Minimal HTML → readable text (report bodies are stored as Tiptap HTML). */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<h1[^>]*>/gi, "\n# ")
+    .replace(/<h2[^>]*>/gi, "\n## ")
+    .replace(/<h3[^>]*>/gi, "\n### ")
+    .replace(/<li[^>]*>/gi, "\n- ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(h1|h2|h3|p|li|blockquote|div|table|thead|tbody|tfoot|tr|td|th)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const server = new McpServer({ name: "octopus", version: "1.0.0" });
 
 server.registerTool(
   "query_lab_memory",
   {
-    title: "Interroger la mémoire du labo",
+    title: "Query the lab memory",
     description:
-      "Recherche sémantique dans la mémoire d'Octopus (runs, protocoles, observations, rapports passés). Renvoie les passages les plus pertinents avec leur source.",
+      "Semantic search over Octopus's memory (runs, protocols, observations, past reports). Returns the most relevant passages with their source.",
     inputSchema: {
-      query: z.string().describe("question en langage naturel"),
-      k: z.number().int().min(1).max(10).optional().describe("nombre de résultats (défaut 5)"),
-      ws: z.string().optional().describe("workspace / lab (défaut demo-lab)"),
+      query: z.string().describe("natural-language question"),
+      k: z.number().int().min(1).max(10).optional().describe("number of results (default 5)"),
+      ws: z.string().optional().describe("workspace / lab (default demo)"),
     },
   },
   async ({ query, k, ws }) => {
@@ -61,7 +81,7 @@ server.registerTool(
         .prepare(`SELECT source_type, source_id, text, vector, dim FROM embedding WHERE ws = ? AND model = ?`)
         .all(ws ?? DEFAULT_WS, VOYAGE_MODEL) as Array<{ source_type: string; source_id: string; text: string; vector: string; dim: number }>;
       if (rows.length === 0) {
-        return { content: [{ type: "text", text: "Aucun résultat en mémoire (base non indexée avec ce modèle ?)." }] };
+        return { content: [{ type: "text", text: "No results in memory (DB not indexed with this model?)." }] };
       }
       const q = await embedQuery(query, rows[0].dim);
       const hits = rows
@@ -71,7 +91,7 @@ server.registerTool(
         .slice(0, k ?? 5);
       const text = hits.length
         ? hits.map((h) => `• [${h.source_type} ${h.source_id}] (score ${h.score.toFixed(2)})\n  ${h.text}`).join("\n\n")
-        : "Aucun résultat en mémoire.";
+        : "No results in memory.";
       return { content: [{ type: "text", text }] };
     } finally {
       db.close();
@@ -82,9 +102,9 @@ server.registerTool(
 server.registerTool(
   "get_run_report",
   {
-    title: "Récupérer le rapport d'un run",
-    description: "Renvoie le rapport auditable d'un run Octopus (prévu / réellement fait / observé / interprété, déviations, citations).",
-    inputSchema: { runId: z.string().describe("identifiant du run, ex. run_xxxx") },
+    title: "Get a run's report",
+    description: "Returns the auditable report of an Octopus run (objective / planned / performed / observed / interpreted, deviations, citations).",
+    inputSchema: { runId: z.string().describe("run identifier, e.g. run_xxxx") },
   },
   async ({ runId }) => {
     const db = openDb();
@@ -93,18 +113,12 @@ server.registerTool(
         .prepare(`SELECT content FROM page WHERE type = 'report' AND latest = 1`)
         .all() as Array<{ content: string }>;
       const match = rows
-        .map((r) => JSON.parse(r.content) as { runId?: string; protocolTitle?: string; planned?: string; performed?: string; observed?: string; interpretation?: string; deviations?: string[] })
+        .map((r) => JSON.parse(r.content) as { runId?: string; protocolTitle?: string; html?: string; signedAt?: string; signedBy?: string })
         .find((c) => c.runId === runId);
-      if (!match) return { content: [{ type: "text", text: `Aucun rapport pour ${runId}.` }] };
-      const text = [
-        `# Rapport — ${match.protocolTitle ?? ""} (run ${runId})`,
-        `## Prévu\n${match.planned ?? ""}`,
-        `## Réellement fait\n${match.performed ?? ""}`,
-        `## Observé\n${match.observed ?? ""}`,
-        `## Interprétation (à valider)\n${match.interpretation ?? ""}`,
-        `## Déviations\n${(match.deviations ?? []).map((d) => `- ${d}`).join("\n") || "Aucune."}`,
-      ].join("\n\n");
-      return { content: [{ type: "text", text }] };
+      if (!match) return { content: [{ type: "text", text: `No report for ${runId}.` }] };
+      const body = htmlToText(match.html ?? "");
+      const sig = match.signedAt ? `\n\n_Signed ${match.signedAt}${match.signedBy ? ` by ${match.signedBy}` : ""}_` : "";
+      return { content: [{ type: "text", text: `${body}${sig}` }] };
     } finally {
       db.close();
     }
@@ -114,9 +128,9 @@ server.registerTool(
 server.registerTool(
   "list_protocols",
   {
-    title: "Lister les protocoles",
-    description: "Liste les protocoles du lab (dernière version), avec leur identifiant et leur titre.",
-    inputSchema: { ws: z.string().optional().describe("workspace / lab (défaut demo-lab)") },
+    title: "List protocols",
+    description: "Lists the lab's protocols (latest version), with their id and title.",
+    inputSchema: { ws: z.string().optional().describe("workspace / lab (default demo)") },
   },
   async ({ ws }) => {
     const db = openDb();
@@ -126,7 +140,7 @@ server.registerTool(
         .all(ws ?? DEFAULT_WS) as Array<{ id: string; title: string; version: number }>;
       const text = rows.length
         ? rows.map((r) => `• ${r.id} (v${r.version}) — ${r.title}`).join("\n")
-        : "Aucun protocole.";
+        : "No protocols.";
       return { content: [{ type: "text", text }] };
     } finally {
       db.close();
@@ -136,4 +150,4 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("octopus-mcp prêt (stdio) — base :", DB_PATH);
+console.error("octopus-mcp ready (stdio) — db:", DB_PATH);
