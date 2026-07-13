@@ -13,6 +13,8 @@ import { GraphMini, type GraphData, type Triple, type CrossProtocol } from "./Gr
 import { useConversations } from "./useConversations";
 import ConversationSidebar from "./ConversationSidebar";
 import AnswerBody from "./AnswerBody";
+import ToolsMenu from "./ToolsMenu";
+import { TOOL_LABELS } from "./toolCatalog";
 import type { ChatMessage, SourceHit } from "./types";
 
 const SUGGESTIONS = [
@@ -50,9 +52,11 @@ export default function ChatClient() {
   }, [setFocus]);
 
   // …et remise à zéro quand on bascule de conversation active (la prochaine
-  // réponse la rallumera depuis ses propres sources / entités).
+  // réponse la rallumera). On efface aussi l'erreur : elle appartenait à la
+  // conversation qu'on vient de quitter, pas à celle qu'on affiche.
   useEffect(() => {
     setFocus([], []);
+    setError(null);
   }, [activeId, setFocus]);
 
   // Dédoublonnage du knowledge graph à la demande : fusionne les concepts en
@@ -92,7 +96,7 @@ export default function ChatClient() {
     let convId = activeId;
     let base: ChatMessage[] = [];
     if (!convId) convId = create();
-    else base = conversations.find((c) => c.id === convId)?.messages ?? [];
+    else base = messages; // convId === activeId ici → messages = active.messages
 
     const history: ChatMessage[] = [...base, { role: "user", content: question }];
     updateMessages(convId, () => [...history, { role: "assistant", content: "", sources: [], steps: [] }]);
