@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "octopus": {
-      "command": "node",
-      "args": ["octopus-mcp/build/index.js"],
-      "env": { "OCTOPUS_DB_PATH": "octopus.db", "OCTOPUS_WS": "demo", "VOYAGE_API_KEY": "" }
+      "command": "npx",
+      "args": ["tsx", "--env-file-if-exists=.env.local", "scripts/mcp-server.ts"],
+      "env": { "OCTOPUS_DB_PATH": "octopus.db", "OCTOPUS_WS": "demo" }
     }
   }
 }

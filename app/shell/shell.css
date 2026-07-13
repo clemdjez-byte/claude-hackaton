@@ -228,6 +228,7 @@
   z-index: 6;
 }
 .tbtn {
+  position: relative;
   width: 36px;
   height: 36px;
   display: grid;
@@ -242,6 +243,29 @@
 .tbtn:hover {
   background: var(--oct-paper-2, #f0ede3);
   color: var(--foreground);
+}
+/* tooltip nom d'outil — apparaît à droite du dock au survol */
+.tbtn-tip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: var(--foreground, #1a1712);
+  color: var(--oct-paper, #fbf9f2);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  box-shadow: 0 4px 14px rgba(20, 17, 13, 0.14);
+  z-index: 20;
+}
+.tbtn:hover .tbtn-tip,
+.tbtn:focus-visible .tbtn-tip {
+  opacity: 1;
 }
 .tbtn.soon {
   color: var(--muted-soft);

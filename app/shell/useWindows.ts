@@ -13,7 +13,8 @@ export type WindowKind =
   | "run"
   | "report"
   | "settings"
-  | "import";
+  | "import"
+  | "mcp";
 
 export type WinRect = { left: number; top: number; width: number; height: number };
 
@@ -49,6 +50,7 @@ const DEFAULT_TITLES: Record<WindowKind, string> = {
   report: "Report",
   settings: "Settings",
   import: "New protocol",
+  mcp: "MCP",
 };
 
 function stackedRect(n: number, kind: WindowKind): WinRect {

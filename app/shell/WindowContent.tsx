@@ -11,6 +11,7 @@ import ProtocolPanel from "@/app/bench/ProtocolPanel";
 import RunPanel from "@/app/bench/RunPanel";
 import ReportEditor from "@/app/bench/ReportEditor";
 import FilesPanel from "@/app/files/FilesPanel";
+import McpPanel from "@/app/mcp/McpPanel";
 
 export function WindowContent({ win }: { win: Win }) {
   switch (win.kind) {
@@ -32,6 +33,8 @@ export function WindowContent({ win }: { win: Win }) {
       return <ReportEditor runId={win.params!.runId} />;
     case "files":
       return <FilesPanel />;
+    case "mcp":
+      return <McpPanel />;
     default:
       return <div className="p-6 text-sm opacity-60">Coming soon: {win.kind}</div>;
   }

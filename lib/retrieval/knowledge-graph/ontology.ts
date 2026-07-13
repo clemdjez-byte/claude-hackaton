@@ -91,6 +91,21 @@ export const PARAMETER_TYPES: SeedParameterType[] = [
     unit: "min",
     aliases: ["pfa", "temps pfa", "temps de fixation", "fixation pfa", "exposition pfa"],
   },
+  {
+    key: "dmso_pct",
+    label: "Final DMSO (vehicle) concentration",
+    unit: "%",
+    aliases: [
+      "dmso",
+      "dmso %",
+      "dmso percentage",
+      "dmso concentration",
+      "dmso vehicle",
+      "final dmso",
+      "concentration dmso",
+      "pourcentage dmso",
+    ],
+  },
 ];
 
 /** Minuscule + sans accents + espaces compactés : base de comparaison des alias. */

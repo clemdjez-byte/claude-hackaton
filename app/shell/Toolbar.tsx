@@ -1,7 +1,8 @@
 "use client";
 // Dock vertical flottant, centré à gauche (voir .toolbar / .tbtn dans shell.css).
-// Trois raccourcis : créer un protocole, ouvrir les fichiers, ouvrir le bench.
-// Icônes en SVG inline, pas de dépendance d'icon set.
+// Raccourcis : créer un protocole, ouvrir les fichiers, ouvrir le bench, ouvrir MCP.
+// Icônes en SVG inline, pas de dépendance d'icon set. Chaque bouton porte un
+// tooltip stylé (.tbtn-tip) qui s'affiche à droite au survol.
 import { useWindowsContext } from "./WindowsContext";
 
 function PlusIcon() {
@@ -30,19 +31,39 @@ function FlaskIcon() {
   );
 }
 
+// Prise / hub : un nœud relié à deux autres — évoque le connecteur MCP + le graphe.
+function McpIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="12" r="2.2" />
+      <circle cx="19" cy="6" r="2.2" />
+      <circle cx="19" cy="18" r="2.2" />
+      <path d="M7 11 17 7" />
+      <path d="M7 13 17 17" />
+    </svg>
+  );
+}
+
 export function Toolbar() {
   const { open } = useWindowsContext();
   return (
     <nav className="toolbar" aria-label="Toolbar">
-      <button type="button" className="tbtn" onClick={() => open("import")} aria-label="New protocol" title="New protocol">
+      <button type="button" className="tbtn" onClick={() => open("import")} aria-label="New protocol">
         <PlusIcon />
+        <span className="tbtn-tip">New protocol</span>
       </button>
       <div className="dock-sep" aria-hidden />
-      <button type="button" className="tbtn" onClick={() => open("files")} aria-label="Files" title="Files">
+      <button type="button" className="tbtn" onClick={() => open("files")} aria-label="Files">
         <FolderIcon />
+        <span className="tbtn-tip">Files</span>
       </button>
-      <button type="button" className="tbtn" onClick={() => open("bench-hub")} aria-label="Bench" title="Bench">
+      <button type="button" className="tbtn" onClick={() => open("bench-hub")} aria-label="Bench">
         <FlaskIcon />
+        <span className="tbtn-tip">Bench</span>
+      </button>
+      <button type="button" className="tbtn" onClick={() => open("mcp")} aria-label="MCP">
+        <McpIcon />
+        <span className="tbtn-tip">MCP</span>
       </button>
     </nav>
   );
