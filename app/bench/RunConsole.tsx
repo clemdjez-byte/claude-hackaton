@@ -5,6 +5,7 @@ import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { Evidence, Step } from "@/lib/core";
 import type { RunContext } from "@/lib/bench";
 import { WebcamCapture } from "./WebcamCapture";
+import { PhoneImport } from "./PhoneImport";
 import {
   advanceStepAction,
   skipStepAction,
@@ -960,6 +961,8 @@ export default function RunConsole({
                       Start camera
                     </button>
                   )}
+                  {/* Ou depuis le téléphone : QR → photos attachées au step courant. */}
+                  <PhoneImport onFiles={(fs) => void uploadPhotos(fs)} disabled={photoBusy} />
                   {photoError && <p className="text-[13px] text-danger">{photoError}</p>}
                 </div>
               )}
@@ -988,6 +991,8 @@ export default function RunConsole({
                   >
                     {dataBusy ? "Importing…" : "Import from computer"}
                   </button>
+                  {/* Ou une photo depuis le téléphone (écran d'instrument, printout…). */}
+                  <PhoneImport onFiles={(fs) => void uploadDataFiles(fs)} disabled={dataBusy} />
                   {dataError && <p className="text-[13px] text-danger">{dataError}</p>}
                 </div>
               )}

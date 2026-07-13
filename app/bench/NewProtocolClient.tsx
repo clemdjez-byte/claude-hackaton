@@ -6,6 +6,7 @@
 // ProtocolsClient (« Protocol Library », fenêtre `protocols`).
 import { useRef, useState, useTransition } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
+import { PhoneImport } from "./PhoneImport";
 import { generateProtocolAction } from "./actions";
 
 // Types acceptés = ceux que le pipeline d'extraction sait lire (OCR / docx /
@@ -24,7 +25,7 @@ export default function NewProtocolClient() {
 
   const MAX_BYTES = 20 * 1024 * 1024;
 
-  function addFiles(incoming: FileList | null) {
+  function addFiles(incoming: FileList | File[] | null) {
     const all = Array.from(incoming ?? []);
     const ok = all.filter((f) => f.size <= MAX_BYTES);
     if (ok.length < all.length) setError("Some files were skipped (max 20 MB each).");
@@ -140,6 +141,10 @@ export default function NewProtocolClient() {
             PDF · JPG · PNG · WebP · DOCX · MD · TXT. Claude extracts a structured draft
           </p>
         </div>
+
+        {/* Photo d'un papier sur la paillasse : le téléphone dépose, on récupère
+            dans `files` comme un fichier local — le flux différé est inchangé. */}
+        <PhoneImport onFiles={(fs) => addFiles(fs)} disabled={busy} />
 
         {files.length > 0 && (
           <ul className="flex flex-col gap-1">

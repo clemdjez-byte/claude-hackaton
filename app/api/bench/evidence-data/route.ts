@@ -24,6 +24,11 @@ const DATA_TYPES: Record<string, string> = {
   xls: "application/vnd.ms-excel",
   pdf: "application/pdf",
   dat: "text/plain",
+  // Photos (écran d'instrument, printout…) — arrivent surtout via « From phone ».
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
 };
 
 function extOf(name: string): string {
@@ -60,7 +65,7 @@ export async function POST(req: Request) {
   const mime = DATA_TYPES[ext];
   if (!mime) {
     return Response.json(
-      { error: "Data files only (CSV, TSV, TXT, JSON, XLSX, XLS, PDF)." },
+      { error: "Data files only (CSV, TSV, TXT, JSON, XLSX, XLS, PDF, photos)." },
       { status: 415 }
     );
   }
