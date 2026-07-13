@@ -78,6 +78,15 @@ async function seedRun(store: Db, protocol: Protocol, spec: RunSpec, operator: s
     if (spec.measurement) await captureMeasurement(store, run.id, undefined, spec.measurement, operator);
     if (spec.deviation) await captureDeviation(store, run.id, undefined, spec.deviation, operator);
 
+    // Attach the result note to the protocol's auto "Results" step so it lands in
+    // the report's Result section (buildResult renders a note in full; the headline
+    // number lives in the note prose). No-op for specs without `result` (AML/fluo)
+    // and for protocols sealed before the Results feature (no such step).
+    if (spec.result?.note) {
+      const resultStep = steps.find((s) => s.title === "Results");
+      if (resultStep) await captureNote(store, run.id, resultStep.id, spec.result.note, operator);
+    }
+
     const completed = await completeRun(store, run.id);
     const report = await generateReport(store, run.id); // English interpretation (AI)
 

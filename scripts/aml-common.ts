@@ -25,6 +25,9 @@ export interface RunSpec {
     reason?: string;
     severity: "minor" | "major" | "critical";
   };
+  /** optional result attached to the protocol's auto "Results" step → fills the
+   *  report's Result section (leave undefined to show the empty/placeholder state) */
+  result?: { note?: string; measurement?: { name: string; value: number; unit: string } };
   /** empirical verdict saved as Outcome (KG reuses it) */
   verdict: Verdict;
   /** causal "why" for partial/failure — becomes attributed_to → failure_mode */
