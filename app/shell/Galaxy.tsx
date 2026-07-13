@@ -18,6 +18,13 @@ import type { GEdge, GNode3D, Vec3 } from "./galaxy-layout";
 export type { GalaxyMode } from "./GalaxyControlContext";
 type GalaxyResponse = { nodes: GNode3D[]; edges: GEdge[] };
 
+// Fenêtre « document » active qui illumine son nœud dans la galaxie (comme le
+// chat le fait pour une recherche). Un rapport est retrouvé via son runId (un run
+// est représenté par son rapport dans le graphe) ; un protocole via son id.
+type WinFocus =
+  | { kind: "report"; runId: string; key: string }
+  | { kind: "protocol"; protocolId: string; key: string };
+
 const HIT_RADIUS = 14;
 const AUTO_SPEED = 0.0022;
 const TILT = 0.32;
@@ -73,20 +80,36 @@ function hexToRgba(hex: string, a: number): string {
 const lerpVec = (a: Vec3, b: Vec3, e: number): Vec3 => [a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e, a[2] + (b[2] - a[2]) * e];
 
 export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; mode: GalaxyMode }) {
-  const { open, windows, activeId } = useWindowsContext();
+  const { open, windows } = useWindowsContext();
   const { focus } = useGalaxyControl();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [data, setData] = useState<GalaxyResponse | null>(null);
 
-  // L'illumination n'est effective que si la fenêtre « Ask your lab » est au
-  // premier plan : dès qu'une autre fenêtre est active, la galaxie revient à sa
-  // vue de base (pas de mise en valeur).
-  const chatActive = windows.some((w) => w.id === activeId && w.kind === "chat");
+  // La fenêtre active ET visible pilote le « projecteur » de la galaxie. On
+  // recalcule l'active par z max en EXCLUANT les fenêtres réduites (réduire une
+  // fenêtre bump son z, donc activeId inclut les réduites) : une fenêtre minimisée
+  // n'illumine rien. Chat au premier plan → focus streamé du chat ; rapport ou
+  // protocole au premier plan → on illumine SON document (nœud + voisins KG).
+  const visibleWins = windows.filter((w) => w.layout !== "min");
+  const activeVisible = visibleWins.length ? visibleWins.reduce((a, b) => (a.z >= b.z ? a : b)) : null;
+  const chatActive = activeVisible?.kind === "chat";
+  const winFocus: WinFocus | null = (() => {
+    if (activeVisible?.kind === "report") {
+      const runId = activeVisible.params?.runId;
+      if (runId) return { kind: "report", runId, key: `report:${runId}` };
+    }
+    if (activeVisible?.kind === "protocol") {
+      const protocolId = activeVisible.params?.protocolId;
+      if (protocolId) return { kind: "protocol", protocolId, key: `protocol:${protocolId}` };
+    }
+    return null;
+  })();
 
   const modeRef = useRef<GalaxyMode>(mode);
   const openRef = useRef(open);
   const focusRef = useRef<FocusRequest | null>(focus);
   const chatActiveRef = useRef(chatActive);
+  const winFocusRef = useRef<WinFocus | null>(winFocus);
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
@@ -99,23 +122,32 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
   useEffect(() => {
     chatActiveRef.current = chatActive;
   }, [chatActive]);
+  useEffect(() => {
+    winFocusRef.current = winFocus;
+  }, [winFocus]);
 
-  // Fetch une fois au montage — décoratif : un échec laisse la galaxie vide.
+  // Fetch au montage + à chaque « galaxy:refresh » (émis après signature d'un
+  // rapport : son nœud et ses arêtes KG viennent d'apparaître). Décoratif : un
+  // échec laisse la galaxie en l'état.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/galaxy")
-      .then((res) => (res.ok ? (res.json() as Promise<GalaxyResponse>) : Promise.reject(new Error(`Error ${res.status}`))))
-      .then((body) => {
-        if (!cancelled) {
+    const load = () => {
+      fetch("/api/galaxy")
+        .then((res) => (res.ok ? (res.json() as Promise<GalaxyResponse>) : Promise.reject(new Error(`Error ${res.status}`))))
+        .then((body) => {
+          if (cancelled) return;
           setData(body);
           onLoad?.(body.nodes.filter((n) => n.isDoc).length);
-        }
-      })
-      .catch(() => {
-        /* best-effort — pas de galaxie plutôt qu'un bureau cassé */
-      });
+        })
+        .catch(() => {
+          /* best-effort — pas de galaxie plutôt qu'un bureau cassé */
+        });
+    };
+    load();
+    window.addEventListener("galaxy:refresh", load);
     return () => {
       cancelled = true;
+      window.removeEventListener("galaxy:refresh", load);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -181,8 +213,11 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
     const nodeIndexById = new Map(nodes.map((n, i) => [n.id, i]));
     let docIds = new Set<string>();
     let entityIds = new Set<string>();
+    // Voisins dont on n'allume PAS le nœud, mais dont on éclaire l'arête vers le
+    // document (focus fenêtre : rapport seul + ses arêtes, vue moins chargée).
+    let edgeIds = new Set<string>();
     let yawTarget = 0;
-    let lastFocusToken = focusRef.current?.token ?? -1; // ne pas rejouer un focus déjà présent au montage
+    let lastSelKey = ""; // clé de la sélection courante ; "" force le calcul au 1er frame
 
     /** Résout une demande de focus vers deux ensembles d'ids de nœuds galaxie :
      *  - docIds : les documents cités (un run est retrouvé via son rapport,
@@ -207,6 +242,33 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
         if (!docs.has(id) && nodeIndexById.has(id)) entities.add(id);
       }
       return { docIds: docs, entityIds: entities };
+    }
+
+    // Voisins directs d'un nœud (arêtes entrantes ET sortantes) — sert à illuminer
+    // le sous-graphe d'un document, pas seulement le nœud seul.
+    function neighborsOf(id: string): Set<string> {
+      const out = new Set<string>();
+      for (const e of data!.edges) {
+        if (e.from === id) out.add(e.to);
+        else if (e.to === id) out.add(e.from);
+      }
+      out.delete(id);
+      return out;
+    }
+
+    /** Résout la fenêtre document active (rapport/protocole) → cibles galaxie :
+     *  le document (halo fort) + ses voisins du knowledge graph (halo doux), pour
+     *  reproduire l'effet du chat. Nœud absent de la galaxie → aucune cible. */
+    function resolveWindowFocus(wf: WinFocus): { docIds: Set<string>; entityIds: Set<string> } {
+      let docId: string | undefined;
+      if (wf.kind === "protocol") {
+        const key = `protocol:${wf.protocolId}`;
+        if (nodeIndexById.has(key)) docId = key;
+      } else {
+        docId = nodes.find((nd) => nd.params?.runId === wf.runId)?.id;
+      }
+      if (!docId) return { docIds: new Set(), entityIds: new Set() };
+      return { docIds: new Set([docId]), entityIds: neighborsOf(docId) };
     }
 
     function computeScale() {
@@ -259,17 +321,30 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
         edgeAlpha = edgeFrom + (edgeTo - edgeFrom) * e;
       }
 
-      // Nouvelle demande de focus du chat ? Résous les cibles + calcule le cap caméra.
+      // Qui pilote le « projecteur » ? La fenêtre active visible.
+      //  - chat au premier plan → documents cités + entités KG (focus streamé) ;
+      //  - rapport/protocole au premier plan → ce document + ses voisins du graphe.
+      // On ne recalcule cibles + cap caméra que quand la sélection change.
+      const chatOn = chatActiveRef.current;
       const fReq = focusRef.current;
-      if ((fReq?.token ?? -1) !== lastFocusToken) {
-        lastFocusToken = fReq?.token ?? -1;
-        if (fReq && (fReq.sources.length || fReq.nodeIds.length)) {
+      const wf = winFocusRef.current;
+      const selKey = chatOn ? `chat:${fReq?.token ?? -1}` : wf ? wf.key : "none";
+      if (selKey !== lastSelKey) {
+        lastSelKey = selKey;
+        if (chatOn && fReq && (fReq.sources.length || fReq.nodeIds.length)) {
           const r = resolveFocus(fReq);
           docIds = r.docIds;
           entityIds = r.entityIds;
+          edgeIds = new Set();
+        } else if (!chatOn && wf) {
+          const r = resolveWindowFocus(wf);
+          docIds = r.docIds;
+          entityIds = new Set(); // fenêtre document : on n'allume PAS les nœuds voisins…
+          edgeIds = r.entityIds; // …seulement les arêtes vers eux (vue moins chargée)
         } else {
           docIds = new Set();
           entityIds = new Set();
+          edgeIds = new Set();
         }
         if (docIds.size + entityIds.size > 0) {
           // La caméra vise les documents en priorité (les entités KG gravitent autour).
@@ -286,9 +361,9 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
         }
       }
 
-      // Illumination effective SEULEMENT quand « Ask your lab » est au premier plan.
-      // Sinon la galaxie reste en vue de base et reprend sa rotation.
-      const showFocus = chatActiveRef.current && docIds.size + entityIds.size > 0;
+      // Illumination effective quand une fenêtre document (chat / rapport /
+      // protocole) est au premier plan. Sinon vue de base + reprise de la rotation.
+      const showFocus = (chatOn || !!wf) && docIds.size + entityIds.size > 0;
 
       if (showFocus && !isDragging) {
         let d = yawTarget - yaw;
@@ -308,7 +383,7 @@ export function Galaxy({ onLoad, mode }: { onLoad?: (docCount: number) => void; 
       // étant vert, elles se lisent en teintes de vert), modulé par profondeur et
       // reveal.
       if (edgeAlpha > 0.001) {
-        const lit = (id: string) => showFocus && (docIds.has(id) || entityIds.has(id));
+        const lit = (id: string) => showFocus && (docIds.has(id) || entityIds.has(id) || edgeIds.has(id));
         // Passe 1 : arêtes normales (en dégradé), estompées si un focus est actif.
         // On saute celles du sous-graphe illuminé : elles sont tracées en jaune juste après.
         ctx!.lineWidth = 1.1;

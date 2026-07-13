@@ -158,6 +158,10 @@ export default function ReportEditor({ runId }: { runId: string }) {
       setHasHtml(Boolean(signed.html.trim()));
       setReport(signed);
       applySaveState("idle");
+      // La signature vient de peupler le knowledge graph du run (indexRunGraph) :
+      // on demande à la galaxie de se recharger pour que le rapport — désormais
+      // relié à ses entités KG — s'illumine quand sa fenêtre est au premier plan.
+      window.dispatchEvent(new Event("galaxy:refresh"));
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Could not sign the report.");
     } finally {
