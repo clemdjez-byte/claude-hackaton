@@ -51,8 +51,14 @@ const DEFAULT_TITLES: Record<WindowKind, string> = {
   import: "New protocol",
 };
 
-function stackedRect(n: number): WinRect {
+function stackedRect(n: number, kind: WindowKind): WinRect {
   const off = (n % 6) * 34;
+  // Le RunConsole (kind "run"/"report") a 3 colonnes (étapes / étape courante /
+  // observations) qui passent côte à côte dès que l'ÉCRAN est large — pas la
+  // fenêtre. À 760px de large elles s'écrasent et deviennent illisibles. On
+  // ouvre donc ces fenêtres assez larges d'emblée pour que les colonnes tiennent.
+  const wide = kind === "run" || kind === "report";
+  if (wide) return { left: 100 + off, top: 80 + off, width: 1160, height: 720 };
   return { left: 220 + off, top: 90 + off, width: 760, height: 620 };
 }
 
@@ -89,7 +95,7 @@ export function reduceWindows(state: WindowsState, action: WindowsAction): Windo
         kind: action.kind,
         title: action.title ?? DEFAULT_TITLES[action.kind],
         params: action.params,
-        rect: stackedRect(state.openCount),
+        rect: stackedRect(state.openCount, action.kind),
         z,
         layout: "float",
       };

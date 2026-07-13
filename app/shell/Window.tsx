@@ -9,7 +9,15 @@ const MIN_HEIGHT = 240;
 // Largeur visuelle d'une vignette de fenêtre réduite (empilée en bas à droite).
 // La hauteur suit le ratio de la fenêtre : l'aperçu est la fenêtre entière
 // (barre + contenu) mise à l'échelle, pas un rendu séparé.
-const MIN_CARD_W = 230;
+const MIN_CARD_W = 115;
+
+// Bandes de z-index. Le dock des vignettes réduites flotte au-dessus des
+// fenêtres flottantes (pour rester cliquable). MAIS dès qu'une fenêtre est en
+// plein écran (hasFull), les réduites tombent dans une bande basse pour passer
+// DERRIÈRE le plein écran (on y accède alors par les onglets). Le plein écran
+// et les fenêtres flottantes partagent le même empilement par récence (win.z),
+// pour qu'une fenêtre ouverte APRÈS un plein écran passe au premier plan.
+const MIN_DOCK_Z = 90;
 
 type ResizeDir = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 const RESIZE_HANDLES: ResizeDir[] = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
@@ -60,6 +68,7 @@ export function Window({
   active,
   tabs,
   minIndex,
+  hasFull,
   dockOpen,
   onFocus,
   onClose,
@@ -73,6 +82,7 @@ export function Window({
   active: boolean;
   tabs?: React.ReactNode;
   minIndex: number;
+  hasFull: boolean;
   dockOpen: boolean;
   onFocus: () => void;
   onClose: () => void;
@@ -128,7 +138,9 @@ export function Window({
     const move = (e: PointerEvent) => {
       if (!dragging) return;
       curLeft = ox + (e.clientX - sx);
-      curTop = oy + (e.clientY - sy);
+      // On borne le haut à 0 : la barre de titre reste toujours attrapable,
+      // sinon on ne peut plus redescendre la fenêtre une fois montée trop haut.
+      curTop = Math.max(0, oy + (e.clientY - sy));
       w.style.left = `${curLeft}px`;
       w.style.top = `${curTop}px`;
     };
@@ -200,6 +212,11 @@ export function Window({
         if (dir.includes("n")) {
           nH = Math.max(MIN_HEIGHT, Ht - dy);
           nT = T + (Ht - nH);
+          // On ne laisse pas le haut passer au-dessus de l'écran : bord bas figé.
+          if (nT < 0) {
+            nT = 0;
+            nH = T + Ht;
+          }
         }
         cur = { left: nL, top: nT, width: nW, height: nH };
         w.style.left = `${nL}px`;
@@ -238,7 +255,9 @@ export function Window({
     ? ({
         width: win.rect.width,
         height: win.rect.height,
-        zIndex: 90 + minIndex,
+        // Dock haut (cliquable) sans plein écran ; bande basse (derrière le
+        // plein écran) dès qu'une fenêtre est en plein écran.
+        zIndex: hasFull ? minIndex : MIN_DOCK_Z + minIndex,
         "--min-i": minIndex,
         "--min-k": minScale,
         "--min-cardh": `${Math.round(win.rect.height * minScale)}px`,
@@ -251,7 +270,7 @@ export function Window({
           height: win.rect.height,
           zIndex: win.z,
         }
-      : { zIndex: win.z };
+      : { zIndex: win.z }; // plein écran / snap gauche / droite : empilés par récence
 
   return (
     <div

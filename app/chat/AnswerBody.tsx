@@ -4,17 +4,17 @@
 // [type:id] transformés en petits chiffres cliquables, et une liste « Sources »
 // numérotée en bas. Survoler un chiffre surligne sa source (et inversement) via
 // l'état local `active`. Cliquer ouvre la fenêtre correspondante.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWindowsContext } from "@/app/shell/WindowsContext";
 import type { WindowKind } from "@/app/shell/useWindows";
-import { numberCitations, type CitationRef } from "./citations";
+import { numberCitations, type CitationRef, type CitationSourceType } from "./citations";
 import { parseMarkdown, type Block, type InlineSpan } from "./markdown";
 import { fallbackLabel } from "./sourceLabel";
 import type { SourceHit } from "./types";
 
 /** Fenêtre à ouvrir pour une source (identique à l'ancien SourceChip). */
 function windowFor(
-  sourceType: string,
+  sourceType: CitationSourceType,
   sourceId: string,
   hit?: SourceHit
 ): { kind: WindowKind; params: Record<string, string> } | null {
@@ -32,8 +32,8 @@ export default function AnswerBody({ content, sources }: { content: string; sour
   const { open } = useWindowsContext();
   const [active, setActive] = useState<number | null>(null);
 
-  const { refs, keyToN } = numberCitations(content);
-  const blocks = parseMarkdown(content, keyToN);
+  const { refs, keyToN } = useMemo(() => numberCitations(content), [content]);
+  const blocks = useMemo(() => parseMarkdown(content, keyToN), [content, keyToN]);
 
   const hitByKey = new Map<string, SourceHit>();
   for (const h of sources ?? []) hitByKey.set(`${h.sourceType}:${h.sourceId}`, h);
@@ -41,7 +41,7 @@ export default function AnswerBody({ content, sources }: { content: string; sour
   const labelFor = (r: CitationRef): string =>
     hitByKey.get(`${r.sourceType}:${r.sourceId}`)?.label || fallbackLabel(r.sourceType, r.sourceId);
 
-  const openRef = (sourceType: string, sourceId: string) => {
+  const openRef = (sourceType: CitationSourceType, sourceId: string) => {
     const target = windowFor(sourceType, sourceId, hitByKey.get(`${sourceType}:${sourceId}`));
     if (target) open(target.kind, target.params);
   };
@@ -51,7 +51,20 @@ export default function AnswerBody({ content, sources }: { content: string; sour
       const key = `${prefix}-${i}`;
       if (s.t === "bold") return <strong key={key}>{s.text}</strong>;
       if (s.t === "italic") return <em key={key}>{s.text}</em>;
-      if (s.t === "cite")
+      if (s.t === "cite") {
+        const target = windowFor(s.sourceType, s.sourceId, hitByKey.get(`${s.sourceType}:${s.sourceId}`));
+        if (!target)
+          return (
+            <span
+              key={key}
+              className={`cite-marker is-static${active === s.n ? " is-active" : ""}`}
+              onMouseEnter={() => setActive(s.n)}
+              onMouseLeave={() => setActive(null)}
+              title="No page for this source"
+            >
+              {s.n}
+            </span>
+          );
         return (
           <button
             key={key}
@@ -60,11 +73,13 @@ export default function AnswerBody({ content, sources }: { content: string; sour
             onMouseEnter={() => setActive(s.n)}
             onMouseLeave={() => setActive(null)}
             onClick={() => openRef(s.sourceType, s.sourceId)}
+            aria-label={`View source ${s.n}`}
             title="View source"
           >
             {s.n}
           </button>
         );
+      }
       return <span key={key}>{s.text}</span>;
     });
 
@@ -92,24 +107,44 @@ export default function AnswerBody({ content, sources }: { content: string; sour
     );
   };
 
+  const sourceInner = (r: CitationRef) => (
+    <>
+      <span className="source-n">{r.n}</span>
+      <span className="source-label">{labelFor(r)}</span>
+    </>
+  );
+
   return (
     <div>
       <div className="answer-prose">{blocks.map(renderBlock)}</div>
       {refs.length > 0 && (
         <ol className="source-list">
-          {refs.map((r) => (
-            <li
-              key={r.n}
-              className={`source-item${active === r.n ? " is-active" : ""}`}
-              onMouseEnter={() => setActive(r.n)}
-              onMouseLeave={() => setActive(null)}
-            >
-              <button type="button" className="source-btn" onClick={() => openRef(r.sourceType, r.sourceId)}>
-                <span className="source-n">{r.n}</span>
-                <span className="source-label">{labelFor(r)}</span>
-              </button>
-            </li>
-          ))}
+          {refs.map((r) => {
+            const target = windowFor(r.sourceType, r.sourceId, hitByKey.get(`${r.sourceType}:${r.sourceId}`));
+            return (
+              <li
+                key={r.n}
+                className={`source-item${active === r.n ? " is-active" : ""}`}
+                onMouseEnter={() => setActive(r.n)}
+                onMouseLeave={() => setActive(null)}
+              >
+                {target ? (
+                  <button
+                    type="button"
+                    className="source-btn"
+                    onClick={() => openRef(r.sourceType, r.sourceId)}
+                    aria-label={`Open ${labelFor(r)}`}
+                  >
+                    {sourceInner(r)}
+                  </button>
+                ) : (
+                  <div className="source-btn is-static" title="No page for this source">
+                    {sourceInner(r)}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>
