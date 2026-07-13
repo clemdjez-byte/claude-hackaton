@@ -60,7 +60,7 @@ continuous conversation where you can interrupt the assistant mid-sentence
 running locally:
 
 - **STT** — Deepgram `nova-3` multilingual streaming ([free tier](https://console.deepgram.com))
-- **Brain** — Claude Haiku with the same 10 run-control tools as the UI
+- **Brain** — Claude Haiku with the same 12 run-control tools as the UI
 - **TTS** — ElevenLabs `eleven_flash_v2_5` ([free tier](https://elevenlabs.io), set
   `ELEVEN_VOICE_ID` to pick a voice)
 
@@ -135,16 +135,15 @@ npx tsc --noEmit
 npm run lint
 ```
 
-## MCP server + Agent Skill (Claude Use)
+## MCP server (Claude Use)
 
-- **`octopus-mcp/`** — standalone MCP server (stdio) exposing lab memory, protocols and
-  reports to Claude Code / Claude Desktop. Claude queries the real Octopus data.
-  ```bash
-  cd octopus-mcp && npm install && npm run build
-  claude mcp add octopus -- node octopus-mcp/build/index.js   # or via the repo's .mcp.json
-  ```
-- **`skills/rt-qpcr-protocol/`** — Agent Skill packaging RT-qPCR domain knowledge
-  (master mix, scaling, cycling, Ct, MIQE, deviations).
+**`octopus-mcp/`** — standalone MCP server (stdio) exposing lab memory, protocols and
+reports to Claude Code / Claude Desktop. Claude queries the real Octopus data.
+
+```bash
+cd octopus-mcp && npm install && npm run build
+claude mcp add octopus -- node octopus-mcp/build/index.js   # or via the repo's .mcp.json
+```
 
 ## License
 
